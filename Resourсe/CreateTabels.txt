@@ -1,0 +1,23 @@
+DROP TABLE IF EXISTS [PaswordTypes];
+CREATE TABLE IF NOT EXISTS [PaswordTypes] (
+  [Id] INTEGER PRIMARY KEY AUTOINCREMENT
+, [Name] NVARCHAR(64) NOT NULL
+, [ValidationRegex] TEXT NOT NULL
+, [Created] DATETIME default current_timestamp
+);
+INSERT OR IGNORE INTO PaswordTypes ([Name], [ValidationRegex]) VALUES
+('Simple', ''),
+('Complex', '^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)[a-zA-Z\d]{8,}$');
+
+DROP TABLE IF EXISTS [Users];
+CREATE TABLE IF NOT EXISTS [Users] (
+  [Id] INTEGER PRIMARY KEY AUTOINCREMENT
+, [UserName] TEXT NOT NULL
+, [Password] TEXT NULL
+, [IsAdmin] BOOLEAN NOT NULL default 0
+, [PasswordTypeId] INTEGER NOT NULL
+, [Created] DATETIME default current_timestamp
+, FOREIGN KEY ([PasswordTypeId]) REFERENCES PaswordTypes(Id)
+);
+INSERT OR IGNORE INTO Users ([UserName], [Password], [PasswordTypeId], [IsAdmin]) VALUES
+('Biletskyi', '123', 2, 1)
