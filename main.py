@@ -7,8 +7,8 @@ import re
 
 # клас для роботи з табличкою Users
 class Users(object):
-    def __init__(self, i_d, user_name, password, is_admin, password_type_id, created):
-        self.i_d = i_d
+    def __init__(self, id, user_name, password, is_admin, password_type_id, created):
+        self.id = id
         self.user_name = user_name
         self.password = password
         self.is_admin = is_admin
@@ -17,65 +17,80 @@ class Users(object):
 
 
 # функція для роботи з файлами
-def parser_files(file_name):
-    res = ''
-    with open(file_name) as file_text:
-        for line in file_text:
-            line = line.rstrip('\n')
-            res += line
-    return res
+def read_file(file_name):
+    with open(file_name) as file:
+        return file.read().strip()
 
 
 # сторінка для авторизації
-class LogPage(tk.Frame):
+class LoginPage(tk.Frame):
     def __init__(self, parent, controller):
         tk.Frame.__init__(self, parent)
         self.controller = controller
+
+        show_users_btn = tk.Button(self, text="Список користувачів", font=("Arial", 12), command=self.show_users)
+        show_users_btn.pack(side="top")
+
         border = tk.LabelFrame(self, text='Вхід', bg='ivory', bd=10, font=("Arial", 20))
         border.pack(fill="both", expand="yes", padx=150, pady=150)
 
-        l1 = tk.Label(border, text="Логін", font=("Arial Bold", 15), bg='ivory')
-        l1.place(x=50, y=20)
-        t1 = tk.Entry(border, width=30, bd=5)
-        t1.place(x=180, y=20)
+        tk.Label(border, text="Логін", font=("Arial Bold", 15), bg='ivory').place(x=50, y=20)
+        self.username_entry = tk.Entry(border, width=30, bd=5)
+        self.username_entry.place(x=180, y=20)
 
-        l2 = tk.Label(border, text="Пароль", font=("Arial Bold", 15), bg='ivory')
-        l2.place(x=50, y=80)
-        t2 = tk.Entry(border, width=30, show='*', bd=5)
-        t2.place(x=180, y=80)
+        tk.Label(border, text="Пароль", font=("Arial Bold", 15), bg='ivory').place(x=50, y=80)
+        self.password_entry = tk.Entry(border, width=30, show='*', bd=5)
+        self.password_entry.place(x=180, y=80)
 
-        # очищення вікна
-        def clear_screen():
-            t1.delete(0, tk.END)
-            t2.delete(0, tk.END)
+        b1 = tk.Button(border, text="Підтвердити", font=("Arial", 12), command=self.verify)
+        b1.place(x=372, y=90)
 
-        # метод для верифікації користувача
-        def verify():
-            i = 0
-            db = sqlite3.connect("Sqlite.sqlite3")
+    def show_users(self):
+        with sqlite3.connect("Sqlite.sqlite3") as db:
             cursor = db.cursor()
-            select_txt = parser_files("Resourсe/SelectAllFromUsers.txt")
-            cursor.execute(select_txt)
-            for row in cursor:
-                all_row = Users(*row)
-                if all_row.user_name == t1.get() and all_row.password == t2.get():
-                    if all_row.is_admin:
-                        controller.shared_data["username"].set(all_row.user_name)
-                        controller.show_frame(AdminMainPage)
-                        clear_screen()
-                    else:
-                        controller.shared_data["username"].set(all_row.user_name)
-                        controller.show_frame(MainPage)
-                        clear_screen()
-                    i = 1
-                    break
-            if i == 0:
-                messagebox.showinfo("Помилка", "Будь ласка перевірте правильність логіну і паролю!!")
-                clear_screen()
-            db.close()
+            select_query = read_file("Resourсe/SelectAllFromUsers.txt")
+            cursor.execute(select_query)
 
-        b1 = tk.Button(border, text="Підтвердити", font=("Arial", 15), command=verify)
-        b1.place(x=350, y=115)
+            user_list = []
+            for row in cursor:
+                user = Users(*row)
+                user_list.append(user.user_name)
+
+            # Показати список імен користувачів у новому вікні
+            user_list_window = tk.Toplevel(self)
+            user_list_window.title("Список користувачів")
+            user_list_window.geometry("300x300")
+
+            # Створити список для відображення імен користувачів
+            user_listbox = tk.Listbox(user_list_window)
+            user_listbox.pack(expand=True, fill="both")
+
+            # Додати імена користувачів до списку
+            for user in user_list:
+                user_listbox.insert("end", user)
+
+    # очищення вікна
+    def clear_entries(self):
+        self.username_entry.delete(0, tk.END)
+        self.password_entry.delete(0, tk.END)
+
+    # метод для верифікації користувача
+    def verify(self):
+        with sqlite3.connect("Sqlite.sqlite3") as db:
+            cursor = db.cursor()
+            select_query = read_file("Resourсe/SelectAllFromUsers.txt")
+            cursor.execute(select_query)
+
+            for row in cursor:
+                user = Users(*row)
+                if user.user_name == self.username_entry.get() and user.password == self.password_entry.get():
+                    self.controller.shared_data["username"].set(user.user_name)
+                    self.controller.show_frame(AdminMainPage if user.is_admin else MainPage)
+                    self.clear_entries()
+                    return
+
+            messagebox.showerror("Помилка", "Будь ласка перевірте правильність логіну і паролю!!")
+            self.clear_entries()
 
 
 # сторінка користувача
@@ -86,7 +101,8 @@ class MainPage(tk.Frame):
         tk.Label(self, textvariable=self.controller.shared_data["username"], font=('Helvetica', 18, "bold")).pack(
             side="top", fill="x", pady=5)
         button = tk.Button(self, text="Вихід", font=("Arial", 15),
-                           command=lambda: controller.show_frame(LogPage))
+                           command=lambda: [self.controller.shared_data["username"].set(''),
+                                            controller.show_frame(LoginPage)])
         button.place(x=730, y=450)
 
 
@@ -108,7 +124,7 @@ class AdminMainPage(tk.Frame):
         button2.place(x=450, y=60)
 
         button3 = tk.Button(self, text="Вихід", font=("Arial", 15),
-                            command=lambda: controller.show_frame(LogPage))
+                            command=lambda: controller.show_frame(LoginPage))
         button3.place(x=730, y=450)
 
 
@@ -121,90 +137,84 @@ class CreateUsersPage(tk.Frame):
         tk.Label(self, text="Створення користувачів", font=('Helvetica', 18, "bold")).pack(side="top", fill="x", pady=5)
         l1 = tk.Label(self, text="Створити логін", font=("Arial Bold", 15), bg='ivory')
         l1.place(x=50, y=50)
-        t1 = tk.Entry(self, width=30, bd=5)
-        t1.place(x=250, y=50)
+        self.user_name_entry = tk.Entry(self, width=30, bd=5)
+        self.user_name_entry.place(x=250, y=50)
 
         l2 = tk.Label(self, text="Створити пароль", font=("Arial Bold", 15), bg='ivory')
         l2.place(x=50, y=100)
-        t2 = tk.Entry(self, width=30, bd=5)
-        t2.place(x=250, y=100)
+        self.user_password_entry = tk.Entry(self, width=30, bd=5)
+        self.user_password_entry.place(x=250, y=100)
 
-        password_option = tk.IntVar()
-        password_option.set(1)
-        r1 = tk.Radiobutton(self, text="Простий пароль", font=("Arial Bold", 10), variable=password_option, value=1)
+        self.password_option = tk.IntVar()
+        self.password_option.set(1)
+        r1 = tk.Radiobutton(self, text="Простий пароль", font=("Arial Bold", 10), variable=self.password_option,
+                            value=1)
         r1.place(x=50, y=140)
 
-        r2 = tk.Radiobutton(self, text="Складний пароль", font=("Arial Bold", 10), variable=password_option, value=2)
+        r2 = tk.Radiobutton(self, text="Складний пароль", font=("Arial Bold", 10), variable=self.password_option,
+                            value=2)
         r2.place(x=200, y=140)
 
-        # метод який створює користувача
-        def create_users():
-
-            if controller.shared_data["del_label"].get() == 1:
-                result_label.place(x=475, y=75)
-
-            db = sqlite3.connect("Sqlite.sqlite3")
-            cursor = db.cursor()
-
-            user_name = t1.get()
-            user_password = t2.get()
-
-            select_txt = "SELECT UserName FROM Users"
-            cursor.execute(select_txt)
-            for user in cursor:
-                if user[0] == user_name:
-                    password_option.set(0)
-                    t1.delete(0, tk.END)
-                    t2.delete(0, tk.END)
-                    break
-
-            if password_option.get() == 2 and user_name != '' and user_password != '':
-                select_txt1 = parser_files("Resourсe/ValidationRegex.txt")
-                cursor.execute(select_txt1)
-                pattern = ''
-                for pat in cursor:
-                    pattern += pat[0]
-                # перевірка дотримання умов складного паролю
-                if re.match(rf"{pattern}", user_password) is None:
-                    result_label.config(text=f"Пароль має не вірний формат!", fg="red")
-                    t2.delete(0, tk.END)
-                else:
-                    select_txt2 = f"INSERT INTO users(UserName, Password, PasswordTypeId) VALUES('{user_name}', '{user_password}', 2)"
-                    cursor.execute(select_txt2)
-                    db.commit()
-                    db.close()
-                    result_label.config(text=f"Користувача {t1.get()} успішно створено!", fg="green")
-                    t1.delete(0, tk.END)
-                    t2.delete(0, tk.END)
-            if password_option.get() == 1 and user_name != '' and user_password != '':
-                select_txt3 = f"INSERT INTO users(UserName, Password, PasswordTypeId) VALUES('{user_name}', '{user_password}', 1)"
-                cursor.execute(select_txt3)
-                db.commit()
-                db.close()
-                result_label.config(text=f"Користувача {t1.get()} успішно створено!", fg="green")
-                t1.delete(0, tk.END)
-                t2.delete(0, tk.END)
-            if password_option.get() == 0:
-                result_label.place_forget()
-                password_option.set(1)
-                messagebox.showinfo("Помилка", "Користувач з таким логіном вже існує, введіть інший!")
-            if user_name == '' or user_password == '':
-                result_label.place_forget()
-                messagebox.showinfo("Помилка", "Будь ласка введіть логін і пароль!")
-
-        def forget_label():
-            result_label.place_forget()
-            controller.show_frame(AdminMainPage)
-
-        result_label = tk.Label(self)
+        self.result_label = tk.Label(self)
 
         button1 = tk.Button(self, text="Підтвердити", font=("Arial", 15),
-                            command=create_users)
+                            command=self.create_user)
         button1.place(x=160, y=180)
 
         button2 = tk.Button(self, text="Назад", font=("Arial", 15),
-                            command=forget_label)
+                            command=self.forget_label)
         button2.place(x=722, y=450)
+
+    # метод який створює користувача
+    def create_user(self):
+        self.result_label.place(x=475, y=75)
+        with sqlite3.connect("Sqlite.sqlite3") as db:
+
+            cursor = db.cursor()
+            select_txt = "SELECT UserName FROM Users WHERE UserName = ?"
+            cursor.execute(select_txt, (self.user_name_entry.get(),))
+            if cursor.fetchone() is not None:
+                self.password_option.set(1)
+                self.result_label.config(text="Користувач з таким логіном вже існує, введіть інший!", fg="red")
+                self.clear_entries()
+
+            elif not self.user_name_entry.get() or not self.user_password_entry.get():
+                self.result_label.config(text="Будь ласка введіть логін і пароль!", fg="red")
+
+            if self.password_option.get() == 2 and self.user_name_entry != '' and self.user_password_entry != '':
+                select_txt1 = f"SELECT ValidationRegex FROM PaswordTypes WHERE Id={self.password_option.get()}"
+                cursor.execute(select_txt1)
+                pattern = ''.join(pat[0] for pat in cursor)
+                # перевірка дотримання умов складного паролю
+                if re.match(rf"{pattern}", self.user_password_entry.get()) is None:
+                    self.result_label.config(text=f"Пароль має не вірний формат!", fg="red")
+                    self.user_password_entry.delete(0, tk.END)
+
+                else:
+                    select_txt2 = f"INSERT INTO users(UserName, Password, PasswordTypeId) VALUES('{self.user_name_entry.get()}', '{self.user_password_entry.get()}', {self.password_option.get()})"
+                    cursor.execute(select_txt2)
+                    db.commit()
+                    self.result_label.config(text=f"Користувача {self.user_name_entry.get()} успішно створено!",
+                                             fg="green")
+                    self.clear_entries()
+
+            if self.password_option.get() == 1 and self.user_name_entry.get() != '' and self.user_password_entry.get() != '':
+                select_txt3 = f"INSERT INTO users(UserName, Password, PasswordTypeId) VALUES('{self.user_name_entry.get()}', '{self.user_password_entry.get()}', {self.password_option.get()})"
+                cursor.execute(select_txt3)
+                db.commit()
+                self.result_label.config(text=f"Користувача {self.user_name_entry.get()} успішно створено!", fg="green")
+                self.clear_entries()
+
+    # очищення вікна
+    def clear_entries(self):
+        self.user_name_entry.delete(0, tk.END)
+        self.user_password_entry.delete(0, tk.END)
+
+    def forget_label(self):
+        self.result_label.place_forget()
+        self.clear_entries()
+        self.password_option.set(1)
+        self.controller.show_frame(AdminMainPage)
 
 
 # сторінка для редагування пароля в конкретного користувача
@@ -217,69 +227,68 @@ class EditUsersPage(tk.Frame):
 
         l1 = tk.Label(self, text="Введіть ім'я користувача", font=("Arial Bold", 15), bg='ivory')
         l1.place(x=50, y=50)
-        t1 = tk.Entry(self, width=30, bd=5)
-        t1.place(x=350, y=50)
+        self.t1 = tk.Entry(self, width=30, bd=5)
+        self.t1.place(x=350, y=50)
 
         l2 = tk.Label(self, text="Введіть новий пароль", font=("Arial Bold", 15), bg='ivory')
         l2.place(x=50, y=100)
-        t2 = tk.Entry(self, width=30, bd=5)
-        t2.place(x=350, y=100)
+        self.t2 = tk.Entry(self, width=30, bd=5)
+        self.t2.place(x=350, y=100)
 
-        password_option = tk.IntVar()
-        password_option.set(0)
-        r1 = tk.Radiobutton(self, text="Простий пароль", font=("Arial Bold", 10), variable=password_option, value=1)
+        self.password_option = tk.IntVar()
+        self.password_option.set(0)
+        r1 = tk.Radiobutton(self, text="Простий пароль", font=("Arial Bold", 10), variable=self.password_option, value=1)
         r1.place(x=50, y=140)
 
-        r2 = tk.Radiobutton(self, text="Складний пароль", font=("Arial Bold", 10), variable=password_option, value=2)
+        r2 = tk.Radiobutton(self, text="Складний пароль", font=("Arial Bold", 10), variable=self.password_option, value=2)
         r2.place(x=200, y=140)
 
-        # метод для зміни паролю
-        def change_users_parameters():
-            db = sqlite3.connect("Sqlite.sqlite3")
-            cursor = db.cursor()
-
-            user_name = t1.get()
-            new_user_password = t2.get()
-            select_txt1 = "SELECT UserName FROM users"
-            cursor.execute(select_txt1)
-            i = 1
-            for name in cursor:
-                if name[0] == user_name:
-                    i = 0
-                    select_txt2 = f'UPDATE users SET Password = "{new_user_password}", PasswordTypeId = {password_option.get()} WHERE UserName = "{user_name}"'
-                    if password_option.get() == 1:
-                        cursor.execute(select_txt2)
-                        db.commit()
-                        messagebox.showinfo('Готово', f'Встановлено новий пароль для користувача - {user_name}')
-                        t1.delete(0, tk.END)
-                        t2.delete(0, tk.END)
-                    elif password_option.get() == 2:
-                        select_txt = parser_files("Resourсe/ValidationRegex.txt")
-                        cursor.execute(select_txt)
-                        pattern = ''
-                        for pat in cursor:
-                            pattern += pat[0]
-                        if re.match(rf"{pattern}", new_user_password) is None:
-                            messagebox.showinfo('Помилка', 'Пароль має не вірний формат!')
-                            t2.delete(0, tk.END)
-                        else:
-                            cursor.execute(select_txt2)
-                            db.commit()
-                            messagebox.showinfo('Готово', f'Встановлено новий пароль для користувача - {user_name}')
-                            t1.delete(0, tk.END)
-                            t2.delete(0, tk.END)
-                    else:
-                        messagebox.showinfo('Нагадування', 'Виберіть один з режимів складності для паролю!')
-            if i:
-                messagebox.showinfo('Помилка', 'Такого користувача не існує!')
-            db.close()
-
         button1 = tk.Button(self, text="Підтвердити", font=("Arial", 15),
-                            command=change_users_parameters)
+                            command=self.change_users_parameters)
         button1.place(x=160, y=180)
 
         button = tk.Button(self, text="Назад", font=("Arial", 15), command=lambda: controller.show_frame(AdminMainPage))
         button.place(x=722, y=450)
+
+    # метод для зміни паролю
+    def change_users_parameters(self):
+        with sqlite3.connect("Sqlite.sqlite3") as db:
+            cursor = db.cursor()
+
+            user_name_entry = self.t1.get()
+            new_user_password = self.t2.get()
+            select_txt1 = "SELECT UserName FROM users"
+            cursor.execute(select_txt1)
+            i = 1
+            for name in cursor:
+                if name[0] == user_name_entry:
+                    i = 0
+                    select_txt2 = f'UPDATE users SET Password = "{new_user_password}", PasswordTypeId = {self.password_option.get()} WHERE UserName = "{user_name_entry}"'
+                    if self.password_option.get() == 1:
+                        cursor.execute(select_txt2)
+                        db.commit()
+                        messagebox.showinfo('Готово', f'Встановлено новий пароль для користувача - {user_name_entry}')
+                        self.t1.delete(0, tk.END)
+                        self.t2.delete(0, tk.END)
+                    elif self.password_option.get() == 2:
+                        select_txt = f"SELECT ValidationRegex FROM PaswordTypes WHERE Id={self.password_option.get()}"
+                        cursor.execute(select_txt)
+                        pattern = ''.join(pat[0] for pat in cursor)
+                        if re.match(rf"{pattern}", new_user_password) is None:
+                            messagebox.showerror('Помилка', 'Пароль має не вірний формат!')
+                            self.t2.delete(0, tk.END)
+                        else:
+                            cursor.execute(select_txt2)
+                            db.commit()
+                            messagebox.showinfo('Готово', f'Встановлено новий пароль для користувача - {user_name_entry}')
+                            self.t1.delete(0, tk.END)
+                            self.t2.delete(0, tk.END)
+                    else:
+                        messagebox.showinfo('Нагадування', 'Виберіть один з режимів складності для паролю!')
+            if i:
+                messagebox.showerror('Помилка', 'Такого користувача не існує!')
+                self.t1.delete(0, tk.END)
+                self.t2.delete(0, tk.END)
 
 
 # головний клас додатку
@@ -290,24 +299,21 @@ class Application(tk.Tk):
         # зберігання змінних
         self.shared_data = {
             "username": tk.StringVar(),
-            "del_label": tk.IntVar(),
         }
 
         # створення вікна
         window = tk.Frame(self)
         window.pack()
 
-        self.shared_data["del_label"].set(1)
-
         window.grid_rowconfigure(0, minsize=500)
         window.grid_columnconfigure(0, minsize=800)
         # загрузка фреймів
         self.frames = {}
-        for F in (LogPage, MainPage, AdminMainPage, CreateUsersPage, EditUsersPage):
+        for F in (LoginPage, MainPage, AdminMainPage, CreateUsersPage, EditUsersPage):
             frame = F(window, self)
             self.frames[F] = frame
             frame.grid(row=0, column=0, sticky="nsew")
-        self.show_frame(LogPage)
+        self.show_frame(LoginPage)
 
     # метод зміни фреймів
     def show_frame(self, page):
@@ -330,7 +336,7 @@ def main():
         pass
     else:
         db = sqlite3.connect("Sqlite.sqlite3")
-        db.executescript(parser_files("Resourсe/CreateTabels.txt"))
+        db.executescript(read_file("Resourсe/CreateTabels.txt"))
         db.close()
     app.mainloop()
 
