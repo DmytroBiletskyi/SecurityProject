@@ -9,6 +9,27 @@ INSERT OR IGNORE INTO PaswordTypes ([Name], [ValidationRegex]) VALUES
 ('Simple', ''),
 ('Complex', '^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)[a-zA-Z\d]{8,}$');
 
+DROP TABLE IF EXISTS [AccessLevels];
+CREATE TABLE IF NOT EXISTS [AccessLevels] (
+  [Id] INTEGER PRIMARY KEY AUTOINCREMENT,
+  [AccessLevelName] TEXT NOT NULL,
+  [Mod] TEXT NOT NULL,
+  [Created] DATETIME default current_timestamp
+);
+INSERT OR IGNORE INTO AccessLevels ([AccessLevelName], [Mod]) VALUES
+('Not secretly-1', 'r'), ('Not secretly-2', 'r, w'), ('Secretly-1', 'r'), ('Secretly-2', 'r, w'), ('Completely secret-1', 'r'), ('Completely secret-2', 'r, w'), ('Of particular importance-1', 'r'), ('Of particular importance-2', 'r, w');
+
+DROP TABLE IF EXISTS [Files];
+CREATE TABLE IF NOT EXISTS [Files] (
+  [Id] INTEGER PRIMARY KEY AUTOINCREMENT,
+  [FileName] TEXT NOT NULL,
+  [FileAccessLevelId] INTEGER NOT NULL,
+  [Created] DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY ([FileAccessLevelId]) REFERENCES AccessLevels(Id)
+);
+INSERT OR IGNORE INTO Files ([FileName], [FileAccessLevelId]) VALUES
+('Text1.txt', 1);
+
 DROP TABLE IF EXISTS [Users];
 CREATE TABLE IF NOT EXISTS [Users] (
   [Id] INTEGER PRIMARY KEY AUTOINCREMENT
@@ -16,8 +37,10 @@ CREATE TABLE IF NOT EXISTS [Users] (
 , [Password] TEXT NULL
 , [IsAdmin] BOOLEAN NOT NULL default 0
 , [PasswordTypeId] INTEGER NOT NULL
+, [UserAccessLevelId] INTEGER NOT NULL
 , [Created] DATETIME default current_timestamp
 , FOREIGN KEY ([PasswordTypeId]) REFERENCES PaswordTypes(Id)
+, FOREIGN KEY ([UserAccessLevelId]) REFERENCES AccessLevels(Id)
 );
-INSERT OR IGNORE INTO Users ([UserName], [Password], [PasswordTypeId], [IsAdmin]) VALUES
-('Biletskyi', '123', 2, 1)
+INSERT OR IGNORE INTO Users ([UserName], [Password], [PasswordTypeId], [UserAccessLevelId], [IsAdmin]) VALUES
+('Biletskyi', '123qwerT', 2, 8, 1);

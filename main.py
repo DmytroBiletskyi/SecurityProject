@@ -1,18 +1,21 @@
 import os.path
 import sqlite3
 import tkinter as tk
-from tkinter import messagebox
+from tkinter import messagebox, ttk, filedialog
 import re
+from PIL import Image, ImageTk
+import subprocess
 
 
 # клас для роботи з табличкою Users
 class Users(object):
-    def __init__(self, id, user_name, password, is_admin, password_type_id, created):
+    def __init__(self, id, user_name, password, is_admin, password_type_id, user_access_level_id, created):
         self.id = id
         self.user_name = user_name
         self.password = password
         self.is_admin = is_admin
         self.password_type_id = password_type_id
+        self.user_access_level_id = user_access_level_id
         self.created = created
 
 
@@ -98,12 +101,160 @@ class MainPage(tk.Frame):
     def __init__(self, parent, controller):
         tk.Frame.__init__(self, parent)
         self.controller = controller
-        tk.Label(self, textvariable=self.controller.shared_data["username"], font=('Helvetica', 18, "bold")).pack(
-            side="top", fill="x", pady=5)
+
+        top_frame = tk.Frame(self)
+        top_frame.pack(side="top", fill="x")
+
+        tk.Label(top_frame, text="Користувач:", font=('Helvetica', 12)).pack(side="left", padx=10)
+        tk.Label(top_frame, textvariable=self.controller.shared_data["username"], font=('Helvetica', 12, "bold")).pack(
+            side="left")
+
+        open_button = tk.Button(self, text="Вибрати файл", font=("Arial", 12), command=self.open_file)
+        open_button.place(x=10, y=30)
+
+        self.file_name = tk.Label(self, text="Виберіть файл!", font=("Arial", 12))
+        self.file_name.place(x=130, y=35)
+
+        self.save_txt_button = tk.Button(self, text='Зберегти текстовий файл', font=("Arial", 12),
+                                         command=self.save_file)
+
+        self.save_img_button = tk.Button(self, text='Зберегти зображення', font=("Arial", 12), command=self.save_image)
+
+        self.run_button = tk.Button(self, text="Запустити програму", font=("Arial", 12), command=self.run_exe,
+                                    bg='green')
+
+        self.rotate_button = tk.Button(self, text="Перевернути зображення", command=self.rotate_image)
+
+        self.text = tk.Text(self, width=55, height=20)
+
+        self.canvas = tk.Canvas(self, width=450, height=350, bd=1, relief='solid', highlightthickness=1,
+                                highlightbackground='black')
+
+        self.file_path = None
+        self.image = None
+        self.canvas_image = None
+
         button = tk.Button(self, text="Вихід", font=("Arial", 15),
-                           command=lambda: [self.controller.shared_data["username"].set(''),
+                           command=lambda: [self.controller.shared_data["username"].set(''), self.forget_elements(),
+                                            self.run_button.place_forget(),
+                                            self.file_name.config(text="Файл не вибрано!"),
                                             controller.show_frame(LoginPage)])
         button.place(x=730, y=450)
+
+    def forget_elements(self):
+        self.canvas.place_forget()
+        self.text.place_forget()
+        self.save_txt_button.place_forget()
+        self.save_img_button.place_forget()
+        self.rotate_button.place_forget()
+
+    def open_file(self):
+        with sqlite3.connect("Sqlite.sqlite3") as db:
+            cursor = db.cursor()
+            select_txt = f"SELECT Users.UserAccessLevelId, AccessLevels.Mod FROM Users INNER JOIN AccessLevels ON Users.UserAccessLevelId = AccessLevels.Id WHERE Users.UserName = '{self.controller.shared_data['username'].get()}'"
+            cursor.execute(select_txt)
+            row = cursor.fetchone()
+            if row is not None:
+                user_access_level_id = row
+            # global file_path
+            self.file_path = filedialog.askopenfilename(
+                initialdir="D:\IV-курс\ІІ-семестр\Технології безпечного доступу\TBD_Biletskyi\Data")
+            file_path1 = self.file_path.split("/")
+            select_txt2 = f"SELECT FileAccessLevelId, Mod FROM Files INNER JOIN AccessLevels ON Files.FileAccessLevelId = AccessLevels.Id WHERE FileName = '{file_path1[-1]}'"
+            cursor.execute(select_txt2)
+            row = cursor.fetchone()
+
+            if row is not None:
+                file_access_level_id = row
+            else:
+                self.file_name.config(text="Файл не вибрано!")
+                messagebox.showerror("Помилка", "Невідомий файл!")
+                return
+            if user_access_level_id[0] < file_access_level_id[0]:
+                messagebox.showerror("Помилка", "Ви не маєте доступу до цього файлу!")
+                return
+            else:
+                self.file_name.config(text=f"Вибрано файл - {file_path1[-1]}")
+                if file_path1[-1].split(".")[-1] == "txt":
+                    # self.canvas.delete("all")
+                    self.canvas.place_forget()
+                    self.rotate_button.place_forget()
+                    self.save_img_button.place_forget()
+                    self.text.place(x=200, y=100)
+                    if len(file_access_level_id[1].split(",")) == 2:
+                        self.save_txt_button.place(x=370, y=440)
+                    else:
+                        self.save_txt_button.place_forget()
+
+                    with open(self.file_path, 'r', encoding='utf-8') as file:
+                        file_contents = file.read()
+                        self.text.delete(1.0, tk.END)
+                        self.text.insert(tk.END, file_contents)
+                elif file_path1[-1].split(".")[-1] == "jpg":
+                    self.save_txt_button.place_forget()
+                    # self.text.delete(1.0, tk.END)
+                    self.text.place_forget()
+                    self.canvas.place(x=200, y=80)
+                    self.save_img_button.place(x=370, y=440)
+                    self.rotate_button.place(x=650, y=250)
+                    if self.file_path:
+                        # load image using Pillow library
+                        self.image = Image.open(self.file_path)
+                        self.image_file_path = self.file_path
+                        # display image on canvas
+                        self.canvas_image = ImageTk.PhotoImage(self.image)
+                        self.canvas.create_image(0, 0, image=self.canvas_image, anchor="nw")
+                elif file_path1[-1].split(".")[-1] == "exe":
+                    # self.output_text = tk.Text(self, height=10, width=50)
+                    # self.output_text.place(x=365, y=35)
+                    self.forget_elements()
+                    self.run_button.place(x=365, y=250)
+                else:
+                    messagebox.showerror("Помилка",
+                                         "Вибрано невідомий файл! Можна вибирати файли з наступними розширеннями: .txt, .jpg, .exe")
+
+    def save_file(self):
+        # global file_path
+        if not self.file_path:
+            messagebox.showerror("Помилка",
+                                 "Спочатку виберіть файл")
+            return
+        with open(self.file_path, 'w', encoding='utf-8') as file:
+            file.write(self.text.get(1.0, tk.END))
+            messagebox.showinfo("Готово", "Файл успішно редагований та збережений!")
+
+    def save_image(self):
+        if not self.file_path:
+            messagebox.showerror("Помилка",
+                                 "Спочатку виберіть файл")
+            return
+            # save image using Pillow library
+        self.image.save(self.file_path)
+        # self.file_path = self.file_path
+        messagebox.showinfo("Готово", "Зображення успішно редаговане та збережене!")
+
+    def rotate_image(self):
+        # rotate image 90 degrees clockwise
+        self.image = self.image.rotate(-90)
+        # update canvas with rotated image
+        self.canvas_image = ImageTk.PhotoImage(self.image)
+        self.canvas.create_image(0, 0, image=self.canvas_image, anchor="nw")
+
+    def run_exe(self):
+        # res = subprocess.Popen(self.file_path, shell=True)
+        # call command prompt and pass .exe file as parameter
+        if not self.file_path:
+            messagebox.showerror("Помилка",
+                                 "Спочатку виберіть файл")
+            return
+            # open file dialog to select save location and format
+        subprocess.Popen(["cmd", "/c", self.file_path], stdout=subprocess.PIPE)
+        ## get output from command prompt
+        # output, errors = result.communicate()
+        ## decode output bytes to string
+        # output_str = output.decode("utf-8")
+        ## insert output into text field
+        # self.output_text.insert(tk.END, output_str)
 
 
 # сторінка адміна
@@ -115,16 +266,96 @@ class AdminMainPage(tk.Frame):
         tk.Label(self, textvariable=self.controller.shared_data["username"], font=('Helvetica', 18, "bold")).pack(
             side="top", fill="x", pady=5)
 
-        button1 = tk.Button(self, text="Створити користувача", font=("Arial", 15),
+        button1 = tk.Button(self, text="Створити нового користувача", font=("Arial", 13),
                             command=lambda: controller.show_frame(CreateUsersPage))
         button1.place(x=100, y=60)
 
-        button2 = tk.Button(self, text="Редагувати користувача", font=("Arial", 15),
-                            command=lambda: controller.show_frame(EditUsersPage))
-        button2.place(x=450, y=60)
+        button2 = tk.Button(self, text="Редагувати користувача", font=("Arial", 13),
+                            command=lambda: controller.show_frame(EditMenuPage))
+        button2.place(x=460, y=60)
+
+        button3 = tk.Button(self, text="Додати новий ресурс до системи", font=("Arial", 13),
+                            command=lambda: controller.show_frame(AddNewFilePage))
+        button3.place(x=100, y=120)
+
+        button4 = tk.Button(self, text="Вихід", font=("Arial", 15),
+                            command=lambda: controller.show_frame(LoginPage))
+        button4.place(x=730, y=450)
+
+
+class AddNewFilePage(tk.Frame):
+    def __init__(self, parent, controller):
+        tk.Frame.__init__(self, parent)
+        self.controller = controller
+
+        tk.Label(self, text="Додавання нового файлу", font=('Helvetica', 18, "bold")).pack(side="top",
+                                                                                           fill="x", pady=5)
+        l1 = tk.Label(self, text="Назва файлу з розширенням", font=("Arial Bold", 12), bg='ivory')
+        l1.place(x=50, y=50)
+        self.file_name_entry = tk.Entry(self, width=30, bd=5)
+        self.file_name_entry.place(x=320, y=50)
+
+        l2 = tk.Label(self, text="Виберіть мітку конфіденційності:", font=("Arial Bold", 12), bg='ivory')
+        l2.place(x=50, y=110)
+
+        self.combo_box = ttk.Combobox(self,
+                                      values=["Not secretly-1", "Not secretly-2",
+                                              "Secretly-1",
+                                              "Secretly-2", "Completely secret-1",
+                                              "Completely secret-2", "Of particular importance-1",
+                                              "Of particular importance-2"], width=24, state="readonly")
+        self.combo_box.set("Not secretly-1")
+        self.combo_box.place(x=340, y=110)
+
+        button1 = tk.Button(self, text="Підтвердити", font=("Arial", 15),
+                            command=self.change_user_access)
+        button1.place(x=250, y=170)
+
+        button = tk.Button(self, text="Назад", font=("Arial", 15), command=lambda: controller.show_frame(AdminMainPage))
+        button.place(x=722, y=450)
+
+    def change_user_access(self):
+
+        with sqlite3.connect("Sqlite.sqlite3") as db:
+            cursor = db.cursor()
+            select_txt = "SELECT FileName FROM Files WHERE FileName = ?"
+            cursor.execute(select_txt, (self.file_name_entry.get(),))
+
+            if cursor.fetchone() is not None:
+                self.file_name_entry.delete(0, tk.END)
+                messagebox.showerror("Помилка", "Файл з такою назвою вже існує, введіть іншу!")
+
+            elif self.file_name_entry.get() != '':
+                combo = self.combo_box.get().split(",")
+                query = f"INSERT INTO Files (FileName, FileAccessLevelId) SELECT '{self.file_name_entry.get()}', Id FROM AccessLevels WHERE AccessLevelName = '{combo[0]}';"
+                cursor.execute(query)
+                db.commit()
+                messagebox.showinfo('Готово',
+                                    f'Додано новий файл - {self.file_name_entry.get()} з міткою конфіденційності - {combo[0]}')
+                self.file_name_entry.delete(0, tk.END)
+                self.combo_box.set("Not secretly-1")
+            else:
+                messagebox.showerror('Помилка', 'Введіть назву файлу')
+
+
+class EditMenuPage(tk.Frame):
+    def __init__(self, parent, controller):
+        tk.Frame.__init__(self, parent)
+        self.controller = controller
+
+        tk.Label(self, text="Меню для редагування користувачів", font=('Helvetica', 18, "bold")).pack(side="top",
+                                                                                                      fill="x", pady=5)
+
+        button1 = tk.Button(self, text="1. Змінити пароль для користувача", font=("Arial", 12),
+                            command=lambda: controller.show_frame(EditPasswordPage))
+        button1.place(x=100, y=60)
+
+        button2 = tk.Button(self, text="2. Змінити рівень доступу користувача", font=("Arial", 12),
+                            command=lambda: controller.show_frame(EditAccessPage))
+        button2.place(x=100, y=110)
 
         button3 = tk.Button(self, text="Вихід", font=("Arial", 15),
-                            command=lambda: controller.show_frame(LoginPage))
+                            command=lambda: controller.show_frame(AdminMainPage))
         button3.place(x=730, y=450)
 
 
@@ -191,7 +422,7 @@ class CreateUsersPage(tk.Frame):
                     self.user_password_entry.delete(0, tk.END)
 
                 else:
-                    select_txt2 = f"INSERT INTO users(UserName, Password, PasswordTypeId) VALUES('{self.user_name_entry.get()}', '{self.user_password_entry.get()}', {self.password_option.get()})"
+                    select_txt2 = f"INSERT INTO users(UserName, Password, PasswordTypeId, UserAccessLevelId) VALUES('{self.user_name_entry.get()}', '{self.user_password_entry.get()}', {self.password_option.get()}, 1)"
                     cursor.execute(select_txt2)
                     db.commit()
                     self.result_label.config(text=f"Користувача {self.user_name_entry.get()} успішно створено!",
@@ -199,7 +430,7 @@ class CreateUsersPage(tk.Frame):
                     self.clear_entries()
 
             if self.password_option.get() == 1 and self.user_name_entry.get() != '' and self.user_password_entry.get() != '':
-                select_txt3 = f"INSERT INTO users(UserName, Password, PasswordTypeId) VALUES('{self.user_name_entry.get()}', '{self.user_password_entry.get()}', {self.password_option.get()})"
+                select_txt3 = f"INSERT INTO users(UserName, Password, PasswordTypeId, UserAccessLevelId) VALUES('{self.user_name_entry.get()}', '{self.user_password_entry.get()}', {self.password_option.get()}, 1)"
                 cursor.execute(select_txt3)
                 db.commit()
                 self.result_label.config(text=f"Користувача {self.user_name_entry.get()} успішно створено!", fg="green")
@@ -218,12 +449,13 @@ class CreateUsersPage(tk.Frame):
 
 
 # сторінка для редагування пароля в конкретного користувача
-class EditUsersPage(tk.Frame):
+class EditPasswordPage(tk.Frame):
     def __init__(self, parent, controller):
         tk.Frame.__init__(self, parent)
 
-        tk.Label(self, text="Редагування паролю для користувача", font=('Helvetica', 18, "bold")).pack(side="top",
-                                                                                                       fill="x", pady=5)
+        tk.Label(self, text="Редагування паролю для користувачів", font=('Helvetica', 18, "bold")).pack(side="top",
+                                                                                                        fill="x",
+                                                                                                        pady=5)
 
         l1 = tk.Label(self, text="Введіть ім'я користувача", font=("Arial Bold", 15), bg='ivory')
         l1.place(x=50, y=50)
@@ -237,17 +469,19 @@ class EditUsersPage(tk.Frame):
 
         self.password_option = tk.IntVar()
         self.password_option.set(0)
-        r1 = tk.Radiobutton(self, text="Простий пароль", font=("Arial Bold", 10), variable=self.password_option, value=1)
+        r1 = tk.Radiobutton(self, text="Простий пароль", font=("Arial Bold", 10), variable=self.password_option,
+                            value=1)
         r1.place(x=50, y=140)
 
-        r2 = tk.Radiobutton(self, text="Складний пароль", font=("Arial Bold", 10), variable=self.password_option, value=2)
+        r2 = tk.Radiobutton(self, text="Складний пароль", font=("Arial Bold", 10), variable=self.password_option,
+                            value=2)
         r2.place(x=200, y=140)
 
         button1 = tk.Button(self, text="Підтвердити", font=("Arial", 15),
                             command=self.change_users_parameters)
         button1.place(x=160, y=180)
 
-        button = tk.Button(self, text="Назад", font=("Arial", 15), command=lambda: controller.show_frame(AdminMainPage))
+        button = tk.Button(self, text="Назад", font=("Arial", 15), command=lambda: controller.show_frame(EditMenuPage))
         button.place(x=722, y=450)
 
     # метод для зміни паролю
@@ -257,17 +491,19 @@ class EditUsersPage(tk.Frame):
 
             user_name_entry = self.t1.get()
             new_user_password = self.t2.get()
-            select_txt1 = "SELECT UserName FROM users"
-            cursor.execute(select_txt1)
+
+            select_txt = "SELECT UserName FROM users"
+            cursor.execute(select_txt)
             i = 1
             for name in cursor:
                 if name[0] == user_name_entry:
                     i = 0
-                    select_txt2 = f'UPDATE users SET Password = "{new_user_password}", PasswordTypeId = {self.password_option.get()} WHERE UserName = "{user_name_entry}"'
+                    query1 = f'UPDATE Users SET Password = "{new_user_password}", PasswordTypeId = {self.password_option.get()} WHERE UserName = "{user_name_entry}";'
                     if self.password_option.get() == 1:
-                        cursor.execute(select_txt2)
+                        cursor.execute(query1)
                         db.commit()
-                        messagebox.showinfo('Готово', f'Встановлено новий пароль для користувача - {user_name_entry}')
+                        messagebox.showinfo('Готово',
+                                            f'Встановлено новий пароль для користувача - {user_name_entry}')
                         self.t1.delete(0, tk.END)
                         self.t2.delete(0, tk.END)
                     elif self.password_option.get() == 2:
@@ -278,9 +514,10 @@ class EditUsersPage(tk.Frame):
                             messagebox.showerror('Помилка', 'Пароль має не вірний формат!')
                             self.t2.delete(0, tk.END)
                         else:
-                            cursor.execute(select_txt2)
+                            cursor.execute(query1)
                             db.commit()
-                            messagebox.showinfo('Готово', f'Встановлено новий пароль для користувача - {user_name_entry}')
+                            messagebox.showinfo('Готово',
+                                                f'Встановлено новий пароль для користувача - {user_name_entry}')
                             self.t1.delete(0, tk.END)
                             self.t2.delete(0, tk.END)
                     else:
@@ -289,6 +526,60 @@ class EditUsersPage(tk.Frame):
                 messagebox.showerror('Помилка', 'Такого користувача не існує!')
                 self.t1.delete(0, tk.END)
                 self.t2.delete(0, tk.END)
+
+
+class EditAccessPage(tk.Frame):
+    def __init__(self, parent, controller):
+        tk.Frame.__init__(self, parent)
+        self.controller = controller
+
+        tk.Label(self, text="Редагування рівнів доступу для користувачів", font=('Helvetica', 18, "bold")).pack(
+            side="top",
+            fill="x", pady=5)
+
+        l1 = tk.Label(self, text="Введіть ім'я користувача", font=("Arial Bold", 12), bg='ivory')
+        l1.place(x=50, y=70)
+        self.t1 = tk.Entry(self, width=30, bd=5)
+        self.t1.place(x=340, y=70)
+
+        l2 = tk.Label(self, text="Виберіть рівень доступу:", font=("Arial Bold", 12), bg='ivory')
+        l2.place(x=50, y=120)
+
+        self.combo_box = ttk.Combobox(self,
+                                      values=["Not secretly-1, (read)", "Not secretly-2, (read/write)",
+                                              "Secretly-1, (read)",
+                                              "Secretly-2, (read/write)", "Completely secret-1, (read)",
+                                              "Completely secret-2, (read/write)", "Of particular importance-1, (read)",
+                                              "Of particular importance-2, (read/write)"], width=32, state="readonly")
+        self.combo_box.set("Not secretly-1, (read)")
+        self.combo_box.place(x=340, y=120)
+
+        button1 = tk.Button(self, text="Підтвердити", font=("Arial", 15),
+                            command=self.change_user_access)
+        button1.place(x=250, y=170)
+
+        button = tk.Button(self, text="Назад", font=("Arial", 15), command=lambda: controller.show_frame(EditMenuPage))
+        button.place(x=722, y=450)
+
+    def change_user_access(self):
+        with sqlite3.connect("Sqlite.sqlite3") as db:
+            cursor = db.cursor()
+            select_query = read_file("Resourсe/SelectAllFromUsers.txt")
+            cursor.execute(select_query)
+            user_name_entry = self.t1.get()
+            for row in cursor:
+                user = Users(*row)
+                if user.user_name == user_name_entry:
+                    combo = self.combo_box.get().split(",")
+                    query = f'UPDATE Users SET UserAccessLevelId = ( SELECT Id FROM AccessLevels WHERE AccessLevelName = "{combo[0]}" ) WHERE UserName = "{user_name_entry}";'
+                    cursor.execute(query)
+                    db.commit()
+                    messagebox.showinfo('Готово',
+                                        f'Встановлено новий рівень доступу для користувача - {user_name_entry}')
+                    self.t1.delete(0, tk.END)
+                    self.combo_box.set("Not secretly-1, (read)")
+            if self.t1.get() != '':
+                messagebox.showerror('Помилка', 'Такого користувача не існує!')
 
 
 # головний клас додатку
@@ -309,7 +600,8 @@ class Application(tk.Tk):
         window.grid_columnconfigure(0, minsize=800)
         # загрузка фреймів
         self.frames = {}
-        for F in (LoginPage, MainPage, AdminMainPage, CreateUsersPage, EditUsersPage):
+        for F in (LoginPage, MainPage, AdminMainPage, CreateUsersPage, EditPasswordPage, EditAccessPage, EditMenuPage,
+                  AddNewFilePage):
             frame = F(window, self)
             self.frames[F] = frame
             frame.grid(row=0, column=0, sticky="nsew")

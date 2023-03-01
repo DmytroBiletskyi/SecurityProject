@@ -1,1 +1,0 @@
-SELECT ValidationRegex FROM PaswordTypes WHERE NAME='Complex'
