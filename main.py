@@ -9,13 +9,14 @@ import subprocess
 
 # клас для роботи з табличкою Users
 class Users(object):
-    def __init__(self, id, user_name, password, is_admin, password_type_id, user_access_level_id, created):
+    def __init__(self, id, user_name, password, is_admin, password_type_id, user_access_level_id, mod, created):
         self.id = id
         self.user_name = user_name
         self.password = password
         self.is_admin = is_admin
         self.password_type_id = password_type_id
         self.user_access_level_id = user_access_level_id
+        self.mod = mod
         self.created = created
 
 
@@ -137,7 +138,7 @@ class MainPage(tk.Frame):
         button = tk.Button(self, text="Вихід", font=("Arial", 15),
                            command=lambda: [self.controller.shared_data["username"].set(''), self.forget_elements(),
                                             self.run_button.place_forget(),
-                                            self.file_name.config(text="Файл не вибрано!"),
+                                            self.file_name.config(text="Файл не вибрано!", fg="black"),
                                             controller.show_frame(LoginPage)])
         button.place(x=730, y=450)
 
@@ -151,40 +152,48 @@ class MainPage(tk.Frame):
     def open_file(self):
         with sqlite3.connect("Sqlite.sqlite3") as db:
             cursor = db.cursor()
-            select_txt = f"SELECT Users.UserAccessLevelId, AccessLevels.Mod FROM Users INNER JOIN AccessLevels ON Users.UserAccessLevelId = AccessLevels.Id WHERE Users.UserName = '{self.controller.shared_data['username'].get()}'"
+            self.file_path = filedialog.askopenfilename(
+                initialdir="D:\IV-курс\ІІ-семестр\Технології безпечного доступу\TBD_Biletskyi\Data")
+            file_path1 = self.file_path.split("/")
+            select_txt = f"SELECT UserAccessLevelId, Mod FROM Users WHERE UserName = '{self.controller.shared_data['username'].get()}';"
             cursor.execute(select_txt)
             row = cursor.fetchone()
             if row is not None:
                 user_access_level_id = row
-            # global file_path
-            self.file_path = filedialog.askopenfilename(
-                initialdir="D:\IV-курс\ІІ-семестр\Технології безпечного доступу\TBD_Biletskyi\Data")
-            file_path1 = self.file_path.split("/")
-            select_txt2 = f"SELECT FileAccessLevelId, Mod FROM Files INNER JOIN AccessLevels ON Files.FileAccessLevelId = AccessLevels.Id WHERE FileName = '{file_path1[-1]}'"
+            if user_access_level_id[0] < 2:
+                self.file_name.config(text="Вас заблоковано!", fg='red')
+                return
+            select_txt2 = f"SELECT FileAccessLevelId FROM Files WHERE FileName = '{file_path1[-1]}'"
             cursor.execute(select_txt2)
             row = cursor.fetchone()
-
             if row is not None:
                 file_access_level_id = row
             else:
-                self.file_name.config(text="Файл не вибрано!")
+                self.file_name.config(text="Файл не вибрано!", fg='red')
                 messagebox.showerror("Помилка", "Невідомий файл!")
                 return
             if user_access_level_id[0] < file_access_level_id[0]:
                 messagebox.showerror("Помилка", "Ви не маєте доступу до цього файлу!")
                 return
             else:
-                self.file_name.config(text=f"Вибрано файл - {file_path1[-1]}")
+                self.file_name.config(
+                    text=f"Вибрано файл - {file_path1[-1]} ({', '.join(user_access_level_id[1].split(', '))})",
+                    fg='black')
                 if file_path1[-1].split(".")[-1] == "txt":
-                    # self.canvas.delete("all")
                     self.canvas.place_forget()
                     self.rotate_button.place_forget()
                     self.save_img_button.place_forget()
                     self.text.place(x=200, y=100)
-                    if len(file_access_level_id[1].split(",")) == 2:
+                    if "w" in user_access_level_id[1].split(", "):
                         self.save_txt_button.place(x=370, y=440)
                     else:
-                        self.save_txt_button.place_forget()
+                        if "e" in user_access_level_id[1].split(", "):
+                            self.forget_elements()
+                            messagebox.showerror("Помилка",
+                                                 "Ви не маєте право на читання чи редагування даного файлу! Ви лише можете запускати виконуванні файли!")
+                            return
+                        else:
+                            self.save_txt_button.place_forget()
 
                     with open(self.file_path, 'r', encoding='utf-8') as file:
                         file_contents = file.read()
@@ -192,29 +201,37 @@ class MainPage(tk.Frame):
                         self.text.insert(tk.END, file_contents)
                 elif file_path1[-1].split(".")[-1] == "jpg":
                     self.save_txt_button.place_forget()
-                    # self.text.delete(1.0, tk.END)
                     self.text.place_forget()
                     self.canvas.place(x=200, y=80)
-                    self.save_img_button.place(x=370, y=440)
-                    self.rotate_button.place(x=650, y=250)
+                    if "w" in user_access_level_id[1].split(", "):
+                        self.rotate_button.place(x=650, y=250)
+                        self.save_img_button.place(x=370, y=440)
+                    else:
+                        if "e" in user_access_level_id[1].split(", "):
+                            self.forget_elements()
+                            messagebox.showerror("Помилка",
+                                                 "Ви не маєте право на читання чи редагування даного файлу! Ви лише можете запускати виконуванні файли!")
+                            return
                     if self.file_path:
-                        # load image using Pillow library
+                        # завантаження зображення використовуючи бібліотеку Pillow
                         self.image = Image.open(self.file_path)
-                        self.image_file_path = self.file_path
-                        # display image on canvas
+                        # показати зображення в canvas
                         self.canvas_image = ImageTk.PhotoImage(self.image)
                         self.canvas.create_image(0, 0, image=self.canvas_image, anchor="nw")
                 elif file_path1[-1].split(".")[-1] == "exe":
-                    # self.output_text = tk.Text(self, height=10, width=50)
-                    # self.output_text.place(x=365, y=35)
-                    self.forget_elements()
-                    self.run_button.place(x=365, y=250)
+                    if "e" in user_access_level_id[1].split(", "):
+                        self.forget_elements()
+                        self.run_button.place(x=365, y=250)
+                    else:
+                        self.forget_elements()
+                        messagebox.showerror("Помилка", "Ви не маєте право запускати цей файл!")
+                        return
                 else:
                     messagebox.showerror("Помилка",
                                          "Вибрано невідомий файл! Можна вибирати файли з наступними розширеннями: .txt, .jpg, .exe")
 
+    # Збереження файлу
     def save_file(self):
-        # global file_path
         if not self.file_path:
             messagebox.showerror("Помилка",
                                  "Спочатку виберіть файл")
@@ -223,38 +240,28 @@ class MainPage(tk.Frame):
             file.write(self.text.get(1.0, tk.END))
             messagebox.showinfo("Готово", "Файл успішно редагований та збережений!")
 
+    # Збереження картинки
     def save_image(self):
         if not self.file_path:
             messagebox.showerror("Помилка",
                                  "Спочатку виберіть файл")
             return
-            # save image using Pillow library
         self.image.save(self.file_path)
-        # self.file_path = self.file_path
         messagebox.showinfo("Готово", "Зображення успішно редаговане та збережене!")
 
+    # Перевернення картинки на 90 градусів
     def rotate_image(self):
-        # rotate image 90 degrees clockwise
         self.image = self.image.rotate(-90)
-        # update canvas with rotated image
         self.canvas_image = ImageTk.PhotoImage(self.image)
         self.canvas.create_image(0, 0, image=self.canvas_image, anchor="nw")
 
+    # Запуск виконуваного файлу
     def run_exe(self):
-        # res = subprocess.Popen(self.file_path, shell=True)
-        # call command prompt and pass .exe file as parameter
         if not self.file_path:
             messagebox.showerror("Помилка",
                                  "Спочатку виберіть файл")
             return
-            # open file dialog to select save location and format
         subprocess.Popen(["cmd", "/c", self.file_path], stdout=subprocess.PIPE)
-        ## get output from command prompt
-        # output, errors = result.communicate()
-        ## decode output bytes to string
-        # output_str = output.decode("utf-8")
-        ## insert output into text field
-        # self.output_text.insert(tk.END, output_str)
 
 
 # сторінка адміна
@@ -299,12 +306,12 @@ class AddNewFilePage(tk.Frame):
         l2.place(x=50, y=110)
 
         self.combo_box = ttk.Combobox(self,
-                                      values=["Not secretly-1", "Not secretly-2",
-                                              "Secretly-1",
-                                              "Secretly-2", "Completely secret-1",
-                                              "Completely secret-2", "Of particular importance-1",
-                                              "Of particular importance-2"], width=24, state="readonly")
-        self.combo_box.set("Not secretly-1")
+                                      values=["Not secretly",
+                                              "Secretly",
+                                              "Completely secret",
+                                              "Of particular importance",
+                                              ], width=24, state="readonly")
+        self.combo_box.set("Not secretly")
         self.combo_box.place(x=340, y=110)
 
         button1 = tk.Button(self, text="Підтвердити", font=("Arial", 15),
@@ -326,14 +333,14 @@ class AddNewFilePage(tk.Frame):
                 messagebox.showerror("Помилка", "Файл з такою назвою вже існує, введіть іншу!")
 
             elif self.file_name_entry.get() != '':
-                combo = self.combo_box.get().split(",")
-                query = f"INSERT INTO Files (FileName, FileAccessLevelId) SELECT '{self.file_name_entry.get()}', Id FROM AccessLevels WHERE AccessLevelName = '{combo[0]}';"
+                combo = self.combo_box.get()
+                query = f"INSERT INTO Files (FileName, FileAccessLevelId) SELECT '{self.file_name_entry.get()}', Id FROM AccessLevels WHERE AccessLevelName = '{combo}';"
                 cursor.execute(query)
                 db.commit()
                 messagebox.showinfo('Готово',
-                                    f'Додано новий файл - {self.file_name_entry.get()} з міткою конфіденційності - {combo[0]}')
+                                    f'Додано новий файл - {self.file_name_entry.get()} з міткою конфіденційності - {combo}')
                 self.file_name_entry.delete(0, tk.END)
-                self.combo_box.set("Not secretly-1")
+                self.combo_box.set("Not secretly")
             else:
                 messagebox.showerror('Помилка', 'Введіть назву файлу')
 
@@ -422,7 +429,7 @@ class CreateUsersPage(tk.Frame):
                     self.user_password_entry.delete(0, tk.END)
 
                 else:
-                    select_txt2 = f"INSERT INTO users(UserName, Password, PasswordTypeId, UserAccessLevelId) VALUES('{self.user_name_entry.get()}', '{self.user_password_entry.get()}', {self.password_option.get()}, 1)"
+                    select_txt2 = f"INSERT INTO users(UserName, Password, PasswordTypeId, UserAccessLevelId, Mod) VALUES('{self.user_name_entry.get()}', '{self.user_password_entry.get()}', {self.password_option.get()}, 2, 'r')"
                     cursor.execute(select_txt2)
                     db.commit()
                     self.result_label.config(text=f"Користувача {self.user_name_entry.get()} успішно створено!",
@@ -430,7 +437,7 @@ class CreateUsersPage(tk.Frame):
                     self.clear_entries()
 
             if self.password_option.get() == 1 and self.user_name_entry.get() != '' and self.user_password_entry.get() != '':
-                select_txt3 = f"INSERT INTO users(UserName, Password, PasswordTypeId, UserAccessLevelId) VALUES('{self.user_name_entry.get()}', '{self.user_password_entry.get()}', {self.password_option.get()}, 1)"
+                select_txt3 = f"INSERT INTO users(UserName, Password, PasswordTypeId, UserAccessLevelId, Mod) VALUES('{self.user_name_entry.get()}', '{self.user_password_entry.get()}', {self.password_option.get()}, 2, 'r')"
                 cursor.execute(select_txt3)
                 db.commit()
                 self.result_label.config(text=f"Користувача {self.user_name_entry.get()} успішно створено!", fg="green")
@@ -540,23 +547,38 @@ class EditAccessPage(tk.Frame):
         l1 = tk.Label(self, text="Введіть ім'я користувача", font=("Arial Bold", 12), bg='ivory')
         l1.place(x=50, y=70)
         self.t1 = tk.Entry(self, width=30, bd=5)
-        self.t1.place(x=340, y=70)
+        self.t1.place(x=325, y=70)
 
         l2 = tk.Label(self, text="Виберіть рівень доступу:", font=("Arial Bold", 12), bg='ivory')
         l2.place(x=50, y=120)
 
         self.combo_box = ttk.Combobox(self,
-                                      values=["Not secretly-1, (read)", "Not secretly-2, (read/write)",
-                                              "Secretly-1, (read)",
-                                              "Secretly-2, (read/write)", "Completely secret-1, (read)",
-                                              "Completely secret-2, (read/write)", "Of particular importance-1, (read)",
-                                              "Of particular importance-2, (read/write)"], width=32, state="readonly")
-        self.combo_box.set("Not secretly-1, (read)")
-        self.combo_box.place(x=340, y=120)
+                                      values=[
+                                          "Block",
+                                          "Not secretly",
+                                          "Secretly",
+                                          "Completely secret",
+                                          "Of particular importance",
+                                      ], width=25, state="readonly")
+        self.combo_box.set("Not secretly")
+        self.combo_box.place(x=325, y=120)
+
+        l3 = tk.Label(self, text="Виберіть можливості:", font=("Arial Bold", 12), bg='ivory')
+        l3.place(x=50, y=170)
+
+        self.mod = ttk.Combobox(self,
+                                values=[
+                                    "r",
+                                    "r, w",
+                                    "e",
+                                    "r, w, e"
+                                ], width=15, state="readonly")
+        self.mod.set("r")
+        self.mod.place(x=325, y=170)
 
         button1 = tk.Button(self, text="Підтвердити", font=("Arial", 15),
                             command=self.change_user_access)
-        button1.place(x=250, y=170)
+        button1.place(x=250, y=215)
 
         button = tk.Button(self, text="Назад", font=("Arial", 15), command=lambda: controller.show_frame(EditMenuPage))
         button.place(x=722, y=450)
@@ -570,14 +592,15 @@ class EditAccessPage(tk.Frame):
             for row in cursor:
                 user = Users(*row)
                 if user.user_name == user_name_entry:
-                    combo = self.combo_box.get().split(",")
-                    query = f'UPDATE Users SET UserAccessLevelId = ( SELECT Id FROM AccessLevels WHERE AccessLevelName = "{combo[0]}" ) WHERE UserName = "{user_name_entry}";'
+                    combo = self.combo_box.get()
+                    query = f'UPDATE Users SET UserAccessLevelId = ( SELECT Id FROM AccessLevels WHERE AccessLevelName = "{combo}" ), Mod = "{self.mod.get()}" WHERE UserName = "{user_name_entry}";'
                     cursor.execute(query)
                     db.commit()
                     messagebox.showinfo('Готово',
                                         f'Встановлено новий рівень доступу для користувача - {user_name_entry}')
                     self.t1.delete(0, tk.END)
-                    self.combo_box.set("Not secretly-1, (read)")
+                    self.combo_box.set("Not secretly")
+                    self.mod.set("r")
             if self.t1.get() != '':
                 messagebox.showerror('Помилка', 'Такого користувача не існує!')
 
