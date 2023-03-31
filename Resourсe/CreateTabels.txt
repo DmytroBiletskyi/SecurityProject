@@ -27,7 +27,73 @@ CREATE TABLE IF NOT EXISTS [Files] (
   FOREIGN KEY ([FileAccessLevelId]) REFERENCES AccessLevels(Id)
 );
 INSERT OR IGNORE INTO Files ([FileName], [FileAccessLevelId]) VALUES
-('Text1.txt', 1);
+('Text1.txt', 2), ('Text2.txt', 4), ('Text3.txt', 3), ('cat.jpg', 4), ('putty.exe', 5);
+
+DROP TABLE IF EXISTS [ActionTypes];
+CREATE TABLE IF NOT EXISTS [ActionTypes] (
+  [Id] INTEGER PRIMARY KEY AUTOINCREMENT,
+  [Read] BOOL NOT NULL,
+  [Write] BOOL NOT NULL,
+  [Execute] BOOL NOT NULL,
+  [ActionName] TEXT NOT NULL,
+  [Created] DATETIME DEFAULT CURRENT_TIMESTAMP);
+INSERT OR IGNORE INTO ActionTypes ([Read], [Write], [Execute], [ActionName]) VALUES
+(False, False, False, '-'), (True, False, False, 'r'), (False, False, True, 'e'), (True, True, False, 'r, w');
+
+DROP TABLE IF EXISTS [DiscretionaryMatrix];
+CREATE TABLE IF NOT EXISTS [DiscretionaryMatrix] (
+  [Id] INTEGER PRIMARY KEY AUTOINCREMENT,
+  [UserId] INTEGER NOT NULL,
+  [FileId] INTEGER NOT NULL,
+  [ActionTypeId] INTEGER NOT NULL,
+  [AllowFrom] TIME,
+  [AllowTo] TIME,
+  FOREIGN KEY ([UserId]) REFERENCES Users(Id),
+  FOREIGN KEY ([FileId]) REFERENCES Files(Id),
+  FOREIGN KEY ([ActionTypeId]) REFERENCES ActionTypes(Id),
+  CONSTRAINT unique_record UNIQUE (UserId, FileId, ActionTypeId)
+  );
+
+DROP TABLE IF EXISTS [AccessModels];
+CREATE TABLE IF NOT EXISTS [AccessModels] (
+  [Id] INTEGER PRIMARY KEY AUTOINCREMENT
+, [ModelName] TEXT NULL
+, [Created] DATETIME default current_timestamp
+);
+INSERT OR IGNORE INTO AccessModels ([ModelName]) VALUES
+('Mandated'), ('Discretionary'), (Role);
+
+/*РОЛЬОВА СТАРТ*/
+DROP TABLE IF EXISTS [Roles];
+CREATE TABLE Roles (
+  Id INTEGER PRIMARY KEY AUTOINCREMENT,
+  RoleName TEXT NOT NULL UNIQUE
+);
+
+DROP TABLE IF EXISTS [UserRoles];
+CREATE TABLE UserRoles (
+  Id INTEGER PRIMARY KEY AUTOINCREMENT,
+  UserId INTEGER NOT NULL,
+  RoleId INTEGER NOT NULL,
+  FOREIGN KEY (RoleId) REFERENCES Roles (Id),
+  FOREIGN KEY (UserId) REFERENCES Users (Id)
+);
+CREATE UNIQUE INDEX [UserRoles_UI] on [UserRoles] (UserId, RoleId);
+
+DROP TABLE IF EXISTS [RoleFiles];
+CREATE TABLE RoleFiles (
+  Id INTEGER PRIMARY KEY AUTOINCREMENT,
+  RoleId INTEGER NOT NULL,
+  FileId INTEGER NOT NULL,
+  ActionTypeId INTEGER NOT NULL,
+  AllowFrom TIME default NULL,
+  AllowTo TIME default NULL,
+  FOREIGN KEY (RoleId) REFERENCES Roles (Id),
+  FOREIGN KEY (FileId) REFERENCES Files (Id),
+  FOREIGN KEY (ActionTypeId) REFERENCES ActionTypes (Id)
+);
+CREATE UNIQUE INDEX [RoleFiles_UI] on [RoleFiles] (RoleId, FileId);
+/*РОЛЬОВА КІНЕЦЬ*/
 
 DROP TABLE IF EXISTS [Users];
 CREATE TABLE IF NOT EXISTS [Users] (
@@ -38,9 +104,11 @@ CREATE TABLE IF NOT EXISTS [Users] (
 , [PasswordTypeId] INTEGER NOT NULL
 , [UserAccessLevelId] INTEGER NOT NULL
 , [Mod] TEXT NOT NULL
+, [AccessModelId] INTEGER NOT NULL
 , [Created] DATETIME default current_timestamp
 , FOREIGN KEY ([PasswordTypeId]) REFERENCES PaswordTypes(Id)
 , FOREIGN KEY ([UserAccessLevelId]) REFERENCES AccessLevels(Id)
+, FOREIGN KEY ([AccessModelId]) REFERENCES AccessModels(Id)
 );
-INSERT OR IGNORE INTO Users ([UserName], [Password], [PasswordTypeId], [UserAccessLevelId], [Mod], [IsAdmin]) VALUES
-('Biletskyi', '123qwerT', 2, 5, 'r, w, e', 1);
+INSERT OR IGNORE INTO Users ([UserName], [Password], [PasswordTypeId], [UserAccessLevelId], [Mod], [AccessModelId], [IsAdmin]) VALUES
+('Admin', '123qwerT', 2, 5, 'r, w, e', 1, 1), ('Biletskyi_1', '1111', 1, 4, 'r, w', 2, 0), ('Biletskyi_2', '222222tttt', 1, 5, 'r, w', 2, 0), ('Biletskyi_3', '123zxcZXC', 2, 2, 'e', 2, 0), ('Biletskyi_4', 'rty456Gh1', 2, 4, 'r', 2, 0), ('Biletskyi_5', '1aE2wE3FR4', 2, 5, 'r, w, e', 2, 0);
