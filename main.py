@@ -42,6 +42,12 @@ class Files(object):
         self.created = created
 
 
+class Roles(object):
+    def __init__(self, id, role_name):
+        self.id = id
+        self.file_name = role_name
+
+
 # функція для роботи з файлами
 def read_file(file_name):
     with open(file_name) as file:
@@ -305,6 +311,93 @@ class MainPage(tk.Frame):
                                 messagebox.showerror("Помилка", f"Ви можете відкрити даний файл з {row[2]} по {row[3]}")
                                 return
                     messagebox.showerror("Помилка", "Ви не маєте жодних прав до цього файлу!")
+                except UnboundLocalError:
+                    self.file_name.config(text="Файл не вибрано!", fg='red')
+                    messagebox.showerror("Помилка", "Невідомий файл!")
+                    return
+            if access_model[1] == 3:
+                try:
+                    switch = False
+                    all_roles = []
+                    select_file_id = f"SELECT Id FROM Files WHERE FileName = '{file_path1[-1]}'"
+                    cursor.execute(select_file_id)
+                    for row in cursor:
+                        file_id = row[0]
+                    select_roles_id = f"SELECT RoleId FROM UserRoles WHERE UserId = {access_model[0]};"
+                    cursor.execute(select_roles_id)
+                    now = datetime.datetime.now()
+                    for role_id in cursor:
+                        all_roles.append(role_id[0])
+                    time_now = now.strftime("%H:%M:%S")
+                    for role in all_roles:
+                        select_role_matrix = f"SELECT FileId, ActionTypeId, AllowFrom, AllowTo FROM RoleFiles WHERE RoleId = {role};"
+                        cursor.execute(select_role_matrix)
+                        for row in cursor:
+                            if row[0] == file_id:
+                                if row[2] <= time_now < row[3]:
+                                    self.allow_from = datetime.datetime.strptime(row[2], '%H:%M:%S').time()
+                                    self.allow_to = datetime.datetime.strptime(row[3], '%H:%M:%S').time()
+                                    self.remaining = None
+                                    select_action_type = f"SELECT ActionName FROM ActionTypes WHERE Id = {row[1]}"
+                                    cursor.execute(select_action_type)
+                                    for action_name in cursor:
+                                        action_type = action_name[0].split(", ")
+                                    self.file_name.config(
+                                        text=f"Вибрано файл - {file_path1[-1]} ({', '.join(action_type)})",
+                                        fg='black')
+                                    if file_path1[-1].split(".")[-1] == "txt":
+                                        self.delete_timer()
+                                        self.create_widgets()
+                                        self.canvas.place_forget()
+                                        self.rotate_button.place_forget()
+                                        self.save_img_button.place_forget()
+                                        self.text.place(x=200, y=100)
+                                        if "w" in action_type:
+                                            self.save_txt_button.place(x=370, y=440)
+                                        else:
+                                            self.save_txt_button.place_forget()
+                                        with open(self.file_path, 'r', encoding='utf-8') as file:
+                                            file_contents = file.read()
+                                            self.text.delete(1.0, tk.END)
+                                            self.text.insert(tk.END, file_contents)
+
+                                        switch = True
+                                    elif file_path1[-1].split(".")[-1] == "jpg":
+                                        self.delete_timer()
+                                        self.create_widgets()
+                                        self.save_txt_button.place_forget()
+                                        self.text.place_forget()
+                                        self.canvas.place(x=200, y=80)
+                                        if "w" in action_type:
+                                            self.rotate_button.place(x=650, y=250)
+                                            self.save_img_button.place(x=370, y=440)
+                                        else:
+                                            self.rotate_button.place_forget()
+                                            self.save_img_button.place_forget()
+                                        if self.file_path:
+                                            # завантаження зображення використовуючи бібліотеку Pillow
+                                            self.image = Image.open(self.file_path)
+                                            # показати зображення в canvas
+                                            self.canvas_image = ImageTk.PhotoImage(self.image)
+                                            self.canvas.create_image(0, 0, image=self.canvas_image, anchor="nw")
+
+                                            switch = True
+                                    elif file_path1[-1].split(".")[-1] == "exe":
+                                        self.delete_timer()
+                                        self.forget_elements()
+                                        self.create_widgets()
+                                        self.run_button.place(x=365, y=250)
+
+                                        switch = True
+                                    else:
+                                        messagebox.showerror("Помилка",
+                                                             "Вибрано невідомий файл! Можна вибирати файли з наступними розширеннями: .txt, .jpg, .exe")
+                                        return
+                                else:
+                                    messagebox.showerror("Помилка", f"Ви можете відкрити даний файл з {row[2]} по {row[3]}")
+                                    return
+                    if not switch:
+                        messagebox.showerror("Помилка", "Ви не маєте жодних прав до цього файлу!")
                 except UnboundLocalError:
                     self.file_name.config(text="Файл не вибрано!", fg='red')
                     messagebox.showerror("Помилка", "Невідомий файл!")
@@ -693,9 +786,13 @@ class EditAccessPage(tk.Frame):
                                  value=2)
         self.r2.place(x=425, y=150)
 
+        self.r3 = tk.Radiobutton(self, text="Рольова", font=("Arial Bold", 10), variable=self.model_type,
+                                 value=3)
+        self.r3.place(x=540, y=150)
+
         self.button1 = tk.Button(self, text="Далі", font=("Arial", 12),
                                  command=self.select_model)
-        self.button1.place(x=250, y=210)
+        self.button1.place(x=300, y=210)
 
         self.l3 = tk.Label(self, text="Виберіть рівень доступу:", font=("Arial Bold", 12), bg='ivory')
 
@@ -763,6 +860,7 @@ class EditAccessPage(tk.Frame):
                     self.l2.place_forget()
                     self.r1.place_forget()
                     self.r2.place_forget()
+                    self.r3.place_forget()
                     self.button1.place_forget()
                     self.button.place_forget()
                     self.t1.delete(0, tk.END)
@@ -858,6 +956,27 @@ class EditAccessPage(tk.Frame):
                 self.button0.place(x=722, y=450)
                 self.button3.place(x=280, y=370)
 
+            elif self.model_type.get() == 3:
+                self.controller.shared_data["username"].set(self.user_name_entry)
+
+                self.create_new_role_label = tk.Label(self, text="Створення нової ролі", font=("Arial Bold", 12),
+                                                      bg='ivory')
+
+                self.role_name = tk.Label(self, text="Введіть назву ролі:", font=("Arial Bold", 12), bg='ivory')
+
+                self.role_name_entry = tk.Entry(self, width=30, bd=5)
+
+                self.create_role_btn = tk.Button(self, text="Створити нову роль", font=("Arial", 12), command=lambda: self.controller.show_frame(RoleAccessPage))
+                self.create_role_btn.place(x=150, y=100)
+                self.set_role_btn = tk.Button(self, text="Встановити роль для користувача", font=("Arial", 12), command=lambda: self.controller.show_frame(SetRoleAccessPage))
+                self.set_role_btn.place(x=350, y=100)
+
+                self.button6 = tk.Button(self, text="Назад", font=("Arial", 15),
+                                        command=self.back_button)
+                self.button6.place(x=722, y=450)
+
+
+
     def change_user_mandated_access(self):
         with sqlite3.connect("Sqlite.sqlite3") as db:
             cursor = db.cursor()
@@ -949,6 +1068,9 @@ class EditAccessPage(tk.Frame):
         self.l6.place_forget()
         self.l7.place_forget()
         self.button3.place_forget()
+        self.button6.place_forget()
+        self.create_role_btn.place_forget()
+        self.set_role_btn.place_forget()
         try:
             for i in range(1, len(self.file_mods)+1):
                 self.nametowidget(f"l8{i}").place_forget()
@@ -967,9 +1089,298 @@ class EditAccessPage(tk.Frame):
         self.l2.place(x=50, y=150)
         self.r1.place(x=325, y=150)
         self.r2.place(x=425, y=150)
+        self.r3.place(x=540, y=150)
         self.button.place(x=722, y=450)
         self.button1.place(x=250, y=210)
 
+
+class RoleAccessPage(tk.Frame):
+    def __init__(self, parent, controller):
+        tk.Frame.__init__(self, parent)
+        self.controller = controller
+
+        tk.Label(self, text="Редагування моделей доступу для користувачів", font=('Helvetica', 14, "bold")).pack(
+            side="top",
+            fill="x", pady=5)
+
+        self.create_new_role_label = tk.Label(self, text="Створення нової ролі", font=("Arial Bold", 12), bg='ivory')
+        self.create_new_role_label.place(x=300, y=45)
+
+        self.role_name = tk.Label(self, text="Введіть назву ролі:", font=("Arial Bold", 12), bg='ivory')
+        self.role_name.place(x=50, y=100)
+        self.role_name_entry = tk.Entry(self, width=30, bd=5)
+        self.role_name_entry.place(x=250, y=100)
+
+        self.button = tk.Button(self, text="Назад", font=("Arial", 15),
+                                 command=lambda: self.controller.show_frame(EditAccessPage))
+        self.button.place(x=722, y=450)
+
+        self.l5 = tk.Label(self, text="Перелік файлів", font=("Arial Bold", 12), bg='ivory')
+        self.files_label = tk.Label(self, text="", font=("Arial Bold", 10))
+
+        self.l6 = tk.Label(self, text="Права доступу", font=("Arial Bold", 12), bg='ivory')
+
+        self.l7 = tk.Label(self, text="Години доступу", font=("Arial Bold", 12), bg='ivory')
+
+        self.button1 = tk.Button(self, text="Підтвердити", font=("Arial", 12),
+                                 command=self.create_role)
+
+        with sqlite3.connect("Sqlite.sqlite3") as db:
+            cursor = db.cursor()
+            query2 = read_file("Resourсe/SelectAllFromFiles.txt")
+            cursor.execute(query2)
+            self.file_list = []
+            for row in cursor:
+                file = Files(*row)
+                self.file_list.append([file.file_name, file.id])
+            # Створити рядок з назвами файлів та їх нумерацією
+            files_string = ""
+            self.file_mods = {}
+            for i, file in enumerate(self.file_list, start=1):
+                files_string += f"{i}. {file[0]}\n\n"
+                mod_var = tk.StringVar(value="-")  # за замовчуванням режим "-"
+                if file[0].split(".")[1] == "txt" or file[0].split(".")[1] == "jpg":
+                    self.mod_box = ttk.Combobox(self, name=f"mod_box{i}", values=["-", "r", "r, w"], width=15,
+                                                textvariable=mod_var, state="readonly")
+                    self.mod_box.place(x=220, y=155 + 34 * i)  # розміщення на формі, де i - поточний індекс файлу
+                if file[0].split(".")[1] == "exe":
+                    self.mod_box = ttk.Combobox(self, name=f"mod_box{i}", values=["-", "e"], width=15,
+                                                textvariable=mod_var, state="readonly")
+                    self.mod_box.place(x=220, y=155 + 34 * i)  # розміщення на формі, де i - поточний індекс файлу
+                self.l8 = tk.Label(self, name=f"l8{i}", text="З:", font=("Arial Bold", 10), bg='ivory')
+                self.l8.place(x=370, y=155 + 34 * i)
+                self.l9 = tk.Label(self, name=f"l9{i}", text="До:", font=("Arial Bold", 10), bg='ivory')
+                self.l9.place(x=560, y=155 + 34 * i)
+                # Додати поля введення Spinbox для вказання часових рамок
+                # Часові рамки з
+                self.hour_var_from = tk.StringVar(value='00')
+                self.hour_spinbox_from = tk.Spinbox(self, name=f"hour_spinbox_from{i}", from_=0, to=23, wrap=True,
+                                                    textvariable=self.hour_var_from, width=5)
+                self.hour_spinbox_from.place(x=390, y=155 + 34 * i)
+                self.minute_var_from = tk.StringVar(value='00')
+                self.minute_spinbox_from = tk.Spinbox(self, name=f"minute_spinbox_from{i}", from_=0, to=59,
+                                                      wrap=True,
+                                                      textvariable=self.minute_var_from,
+                                                      width=5)
+                self.minute_spinbox_from.place(x=440, y=155 + 34 * i)
+                self.second_var_from = tk.StringVar(value='00')
+                self.second_spinbox_from = tk.Spinbox(self, name=f"second_spinbox_from{i}", from_=0, to=59,
+                                                      wrap=True,
+                                                      textvariable=self.second_var_from,
+                                                      width=5)
+                self.second_spinbox_from.place(x=490, y=155 + 34 * i)
+                # Часові рамки до
+                self.hour_var_to = tk.StringVar(value='23')
+                self.hour_spinbox_to = tk.Spinbox(self, name=f"hour_spinbox_to{i}", from_=0, to=23, wrap=True,
+                                                  textvariable=self.hour_var_to, width=5)
+                self.hour_spinbox_to.place(x=590, y=155 + 34 * i)
+                self.minute_var_to = tk.StringVar(value='59')
+                self.minute_spinbox_to = tk.Spinbox(self, name=f"minute_spinbox_to{i}", from_=0, to=59, wrap=True,
+                                                    textvariable=self.minute_var_to,
+                                                    width=5)
+                self.minute_spinbox_to.place(x=640, y=155 + 34 * i)
+                self.second_var_to = tk.StringVar(value='59')
+                self.second_spinbox_to = tk.Spinbox(self, name=f"second_spinbox_to{i}", from_=0, to=59, wrap=True,
+                                                    textvariable=self.second_var_to,
+                                                    width=5)
+                self.second_spinbox_to.place(x=690, y=155 + 34 * i)
+                self.file_mods[file[1]] = [mod_var, self.hour_var_from, self.minute_var_from, self.second_var_from,
+                                           self.hour_var_to, self.minute_var_to, self.second_var_to]
+                # Відобразити список файлів у Label
+                self.l5.place(x=50, y=150)
+                self.l6.place(x=220, y=150)
+                self.l7.place(x=510, y=150)
+                self.files_label.config(text=files_string)
+                self.files_label.place(x=50, y=195)
+                self.button1.place(x=350, y=400)
+
+
+    def create_role(self):
+        role_name = self.role_name_entry.get()
+        if role_name != '':
+            try:
+                with sqlite3.connect("Sqlite.sqlite3") as db:
+                    cursor = db.cursor()
+                    update_roles_query = f"INSERT INTO Roles (RoleName) VALUES ('{role_name}');"
+                    cursor.execute(update_roles_query)
+                    db.commit()
+                for key, value in self.file_mods.items():
+                    if int(value[1].get()) < 0 or int(value[1].get()) > 23:
+                        messagebox.showerror("Помилка!", "Некоректні години для часової рамки 'з'")
+                        with sqlite3.connect("Sqlite.sqlite3") as db:
+                            cursor = db.cursor()
+                            delete_roles_query = f"DELETE FROM Roles WHERE RoleName = '{role_name}';"
+                            cursor.execute(delete_roles_query)
+                            db.commit()
+                        return
+                    if int(value[2].get()) < 0 or int(value[2].get()) > 59:
+                        messagebox.showerror("Помилка!", "Некоректні хвилини для часової рамки 'з'")
+                        with sqlite3.connect("Sqlite.sqlite3") as db:
+                            cursor = db.cursor()
+                            delete_roles_query = f"DELETE FROM Roles WHERE RoleName = '{role_name}';"
+                            cursor.execute(delete_roles_query)
+                            db.commit()
+                        return
+                    if int(value[3].get()) < 0 or int(value[3].get()) > 59:
+                        messagebox.showerror("Помилка!", "Некоректні секунди для часової рамки 'з'")
+                        with sqlite3.connect("Sqlite.sqlite3") as db:
+                            cursor = db.cursor()
+                            delete_roles_query = f"DELETE FROM Roles WHERE RoleName = '{role_name}';"
+                            cursor.execute(delete_roles_query)
+                            db.commit()
+                        return
+                    if int(value[4].get()) < 0 or int(value[4].get()) > 23:
+                        messagebox.showerror("Помилка!", "Некоректні години для часової рамки 'до'")
+                        with sqlite3.connect("Sqlite.sqlite3") as db:
+                            cursor = db.cursor()
+                            delete_roles_query = f"DELETE FROM Roles WHERE RoleName = '{role_name}';"
+                            cursor.execute(delete_roles_query)
+                            db.commit()
+                        return
+                    if int(value[5].get()) < 0 or int(value[5].get()) > 59:
+                        messagebox.showerror("Помилка!", "Некоректні хвилини для часової рамки 'до'")
+                        with sqlite3.connect("Sqlite.sqlite3") as db:
+                            cursor = db.cursor()
+                            delete_roles_query = f"DELETE FROM Roles WHERE RoleName = '{role_name}';"
+                            cursor.execute(delete_roles_query)
+                            db.commit()
+                        return
+                    if int(value[6].get()) < 0 or int(value[6].get()) > 59:
+                        messagebox.showerror("Помилка!", "Некоректні секунди для часової рамки 'до'")
+                        with sqlite3.connect("Sqlite.sqlite3") as db:
+                            cursor = db.cursor()
+                            delete_roles_query = f"DELETE FROM Roles WHERE RoleName = '{role_name}';"
+                            cursor.execute(delete_roles_query)
+                            db.commit()
+                        return
+                for key, value in self.file_mods.items():
+                    time_str_from = f"{value[1].get()}:{value[2].get()}:{value[3].get()}"
+                    time_str_to = f"{value[4].get()}:{value[5].get()}:{value[6].get()}"
+
+                    time_obj_from = datetime.datetime.strptime(time_str_from, '%H:%M:%S').time()
+                    time_obj_to = datetime.datetime.strptime(time_str_to, '%H:%M:%S').time()
+
+                    with sqlite3.connect("Sqlite.sqlite3") as db:
+                        select_role_query = f"SELECT Id FROM Roles WHERE RoleName = '{role_name}';"
+                        cursor.execute(select_role_query)
+                        for role in cursor:
+                            role_id = role[0]
+                        cursor = db.cursor()
+                        select_action_id_query = f"SELECT Id FROM ActionTypes WHERE ActionName = '{value[0].get()}';"
+                        cursor.execute(select_action_id_query)
+                        try:
+                            for row in cursor:
+                                if row[0] != 1:
+                                    insert_role_files_query = f"INSERT INTO RoleFiles (RoleId, FileId, ActionTypeId, AllowFrom, AllowTo) VALUES ({role_id}, {key}, {row[0]}, '{time_obj_from}', '{time_obj_to}');"
+                                    cursor.execute(insert_role_files_query)
+                                    db.commit()
+                        except sqlite3.IntegrityError:
+                            update_discretionary_matrix_query = f"UPDATE RoleFiles SET AllowFrom='{time_obj_from}', AllowTo='{time_obj_to}' WHERE FileId={key};"
+                            cursor.execute(update_discretionary_matrix_query)
+                            db.commit()
+                messagebox.showinfo("Готово!",
+                                    f"Роль - {role_name}, успішно створена!")
+            except sqlite3.IntegrityError:
+                messagebox.showerror("Помилка", "Роль з такою назвою вже існує!")
+                self.role_name_entry.delete(0, tk.END)
+                return
+            except ValueError:
+                messagebox.showerror("Помилка!", "Некоректні дані для часової рамки!")
+                with sqlite3.connect("Sqlite.sqlite3") as db:
+                    cursor = db.cursor()
+                    delete_roles_query = f"DELETE FROM Roles WHERE RoleName = '{role_name}');"
+                    cursor.execute(delete_roles_query)
+                    db.commit()
+                return
+        else:
+            messagebox.showerror("Помилка", "Введіть назву ролі!")
+
+class SetRoleAccessPage(tk.Frame):
+    def __init__(self, parent, controller):
+        tk.Frame.__init__(self, parent)
+        self.controller = controller
+
+        tk.Label(self, text="Редагування моделей доступу для користувачів", font=('Helvetica', 14, "bold")).pack(
+            side="top",
+            fill="x", pady=5)
+
+        self.set_new_role_label = tk.Label(self, text="Встановлення ролей користувачам", font=("Arial Bold", 12), bg='ivory')
+        self.set_new_role_label.place(x=300, y=45)
+
+        self.label = tk.Label(self, text="Список ролей", font=("Arial", 10),
+                                           bg='ivory')
+
+        self.update_role = tk.Button(self, text="Оновити", font=("Arial", 10),
+                                command=self.get_list_of_role)
+
+        self.roles_label = tk.Label(self, text="", font=("Arial Bold", 10))
+
+        self.update_role.place(x=50, y=100)
+
+        self.button = tk.Button(self, text="Підтвердити", font=("Arial", 10), command=self.add_roles_to_user)
+
+        self.button1 = tk.Button(self, text="Назад", font=("Arial", 15),
+                                 command=lambda: self.controller.show_frame(EditAccessPage))
+        self.button1.place(x=722, y=450)
+
+    def get_list_of_role(self):
+        with sqlite3.connect("Sqlite.sqlite3") as db:
+            cursor = db.cursor()
+            query = read_file("Resourсe/SelectAllFromRoles.txt")
+            cursor.execute(query)
+            self.role_list = []
+            for row in cursor:
+                role = Roles(*row)
+                self.role_list.append([role.file_name, role.id])
+            # Створити рядок з назвами файлів та їх нумерацією
+            roles_string = ""
+            self.role_mods = {}
+            self.vars_list = []
+            for i, role in enumerate(self.role_list, start=1):
+                roles_string += f"{i}.\n\n"
+                var = tk.IntVar()
+                self.role_mods[role[1]] = var
+                self.check_box = tk.Checkbutton(self, text=f"{role[0]}", variable=var)
+                self.check_box.place(x=70, y=157 + 34 * i)  # розміщення на формі, де i - поточний індекс файлу
+                self.roles_label.config(text=roles_string)
+                self.roles_label.place(x=50, y=195)
+        self.button.place(x=200, y=100)
+        self.label.place(x=50, y=150)
+
+    def add_roles_to_user(self):
+        switch = False
+        with sqlite3.connect("Sqlite.sqlite3") as db:
+            cursor = db.cursor()
+            query = f"SELECT Id FROM Users WHERE UserName = '{self.controller.shared_data['username'].get()}';"
+            cursor.execute(query)
+            for id in cursor:
+                user_id = id[0]
+            for var in self.role_mods:
+                if self.role_mods[var].get() == 0:
+                    cursor = db.cursor()
+                    query2 = f"DELETE FROM UserRoles WHERE RoleId = {var} AND UserId = {user_id}"
+                    cursor.execute(query2)
+                    db.commit()
+                else:
+                    try:
+                        cursor = db.cursor()
+                        query3 = f"INSERT INTO UserRoles (UserId, RoleId) VALUES ({user_id}, {var});"
+                        cursor.execute(query3)
+                        db.commit()
+                        switch = True
+                    except sqlite3.IntegrityError:
+                        messagebox.showinfo("Помилка",
+                                            f"Ця(і) роль(i) уже є у даного користувача!")
+                        return
+            if switch:
+                cursor = db.cursor()
+                query4 = f"UPDATE Users SET AccessModelId = 3 WHERE Id = {user_id};"
+                cursor.execute(query4)
+                db.commit()
+                messagebox.showinfo("Готово", f"Роль(i) успішно надана(i) користувачу - {self.controller.shared_data['username'].get()}")
+            else:
+                messagebox.showinfo("Готово",
+                                    f"Роль(i) успішно видалена(i)")
 
 # головний клас додатку
 class Application(tk.Tk):
@@ -990,7 +1401,7 @@ class Application(tk.Tk):
         # загрузка фреймів
         self.frames = {}
         for F in (LoginPage, MainPage, AdminMainPage, CreateUsersPage, EditPasswordPage, EditAccessPage, EditMenuPage,
-                  AddNewFilePage):
+                  AddNewFilePage, RoleAccessPage, SetRoleAccessPage):
             frame = F(window, self)
             self.frames[F] = frame
             frame.grid(row=0, column=0, sticky="nsew")
@@ -1049,3 +1460,6 @@ def main():
 # точка входу в програму
 if __name__ == '__main__':
     main()
+
+#Admin
+#123qwerT
