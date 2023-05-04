@@ -1,11 +1,15 @@
+import itertools
 import os.path
 import sqlite3
+import string
 import tkinter as tk
 from tkinter import messagebox, ttk, filedialog
 import re
 from PIL import Image, ImageTk
 import subprocess
 import datetime
+import time
+import threading
 
 
 # клас для роботи з табличкою Users
@@ -394,7 +398,8 @@ class MainPage(tk.Frame):
                                                              "Вибрано невідомий файл! Можна вибирати файли з наступними розширеннями: .txt, .jpg, .exe")
                                         return
                                 else:
-                                    messagebox.showerror("Помилка", f"Ви можете відкрити даний файл з {row[2]} по {row[3]}")
+                                    messagebox.showerror("Помилка",
+                                                         f"Ви можете відкрити даний файл з {row[2]} по {row[3]}")
                                     return
                     if not switch:
                         messagebox.showerror("Помилка", "Ви не маєте жодних прав до цього файлу!")
@@ -452,6 +457,7 @@ class MainPage(tk.Frame):
         self.run_button.place_forget()
         self.delete_frame_timer()
         self.file_name.config(text="Файл не вибрано!", font=("Arial", 12))
+
     # Збереження файлу
     def save_file(self):
         if not self.file_path:
@@ -495,21 +501,25 @@ class AdminMainPage(tk.Frame):
         tk.Label(self, textvariable=self.controller.shared_data["username"], font=('Helvetica', 18, "bold")).pack(
             side="top", fill="x", pady=5)
 
-        button1 = tk.Button(self, text="Створити нового користувача", font=("Arial", 13),
+        button1 = tk.Button(self, text="Створити нового користувача", font=("Arial", 12),
                             command=lambda: controller.show_frame(CreateUsersPage))
         button1.place(x=100, y=60)
 
-        button2 = tk.Button(self, text="Редагувати користувача", font=("Arial", 13),
+        button2 = tk.Button(self, text="Редагувати користувача", font=("Arial", 12),
                             command=lambda: controller.show_frame(EditMenuPage))
         button2.place(x=460, y=60)
 
-        button3 = tk.Button(self, text="Додати новий ресурс до системи", font=("Arial", 13),
+        button3 = tk.Button(self, text="Додати новий ресурс до системи", font=("Arial", 12),
                             command=lambda: controller.show_frame(AddNewFilePage))
         button3.place(x=100, y=120)
 
-        button4 = tk.Button(self, text="Вихід", font=("Arial", 15),
+        button4 = tk.Button(self, text="Знайти пароль для користувача", font=("Arial", 12),
+                            command=lambda: controller.show_frame(BruteForce))
+        button4.place(x=460, y=120)
+
+        button5 = tk.Button(self, text="Вихід", font=("Arial", 15),
                             command=lambda: controller.show_frame(LoginPage))
-        button4.place(x=730, y=450)
+        button5.place(x=730, y=450)
 
 
 class AddNewFilePage(tk.Frame):
@@ -830,7 +840,8 @@ class EditAccessPage(tk.Frame):
         self.button2 = tk.Button(self, text="Підтвердити", font=("Arial", 12),
                                  command=self.change_user_mandated_access)
 
-        self.button = tk.Button(self, text="Назад", font=("Arial", 15), command=lambda: controller.show_frame(EditMenuPage))
+        self.button = tk.Button(self, text="Назад", font=("Arial", 15),
+                                command=lambda: controller.show_frame(EditMenuPage))
         self.button.place(x=722, y=450)
 
         self.button0 = tk.Button(self, text="Назад", font=("Arial", 15), command=self.back_button)
@@ -916,13 +927,15 @@ class EditAccessPage(tk.Frame):
                     self.hour_spinbox_from.place(x=390, y=110 + 34 * i)
 
                     self.minute_var_from = tk.StringVar(value='00')
-                    self.minute_spinbox_from = tk.Spinbox(self, name=f"minute_spinbox_from{i}", from_=0, to=59, wrap=True,
+                    self.minute_spinbox_from = tk.Spinbox(self, name=f"minute_spinbox_from{i}", from_=0, to=59,
+                                                          wrap=True,
                                                           textvariable=self.minute_var_from,
                                                           width=5)
                     self.minute_spinbox_from.place(x=440, y=110 + 34 * i)
 
                     self.second_var_from = tk.StringVar(value='00')
-                    self.second_spinbox_from = tk.Spinbox(self, name=f"second_spinbox_from{i}", from_=0, to=59, wrap=True,
+                    self.second_spinbox_from = tk.Spinbox(self, name=f"second_spinbox_from{i}", from_=0, to=59,
+                                                          wrap=True,
                                                           textvariable=self.second_var_from,
                                                           width=5)
                     self.second_spinbox_from.place(x=490, y=110 + 34 * i)
@@ -966,16 +979,16 @@ class EditAccessPage(tk.Frame):
 
                 self.role_name_entry = tk.Entry(self, width=30, bd=5)
 
-                self.create_role_btn = tk.Button(self, text="Створити нову роль", font=("Arial", 12), command=lambda: self.controller.show_frame(RoleAccessPage))
+                self.create_role_btn = tk.Button(self, text="Створити нову роль", font=("Arial", 12),
+                                                 command=lambda: self.controller.show_frame(RoleAccessPage))
                 self.create_role_btn.place(x=150, y=100)
-                self.set_role_btn = tk.Button(self, text="Встановити роль для користувача", font=("Arial", 12), command=lambda: self.controller.show_frame(SetRoleAccessPage))
+                self.set_role_btn = tk.Button(self, text="Встановити роль для користувача", font=("Arial", 12),
+                                              command=lambda: self.controller.show_frame(SetRoleAccessPage))
                 self.set_role_btn.place(x=350, y=100)
 
                 self.button6 = tk.Button(self, text="Назад", font=("Arial", 15),
-                                        command=self.back_button)
+                                         command=self.back_button)
                 self.button6.place(x=722, y=450)
-
-
 
     def change_user_mandated_access(self):
         with sqlite3.connect("Sqlite.sqlite3") as db:
@@ -1072,7 +1085,7 @@ class EditAccessPage(tk.Frame):
         self.create_role_btn.place_forget()
         self.set_role_btn.place_forget()
         try:
-            for i in range(1, len(self.file_mods)+1):
+            for i in range(1, len(self.file_mods) + 1):
                 self.nametowidget(f"l8{i}").place_forget()
                 self.nametowidget(f"l9{i}").place_forget()
                 self.nametowidget(f"mod_box{i}").place_forget()
@@ -1112,7 +1125,7 @@ class RoleAccessPage(tk.Frame):
         self.role_name_entry.place(x=250, y=100)
 
         self.button = tk.Button(self, text="Назад", font=("Arial", 15),
-                                 command=lambda: self.controller.show_frame(EditAccessPage))
+                                command=lambda: self.controller.show_frame(EditAccessPage))
         self.button.place(x=722, y=450)
 
         self.l5 = tk.Label(self, text="Перелік файлів", font=("Arial Bold", 12), bg='ivory')
@@ -1193,7 +1206,6 @@ class RoleAccessPage(tk.Frame):
                 self.files_label.config(text=files_string)
                 self.files_label.place(x=50, y=195)
                 self.button1.place(x=350, y=400)
-
 
     def create_role(self):
         role_name = self.role_name_entry.get()
@@ -1295,6 +1307,7 @@ class RoleAccessPage(tk.Frame):
         else:
             messagebox.showerror("Помилка", "Введіть назву ролі!")
 
+
 class SetRoleAccessPage(tk.Frame):
     def __init__(self, parent, controller):
         tk.Frame.__init__(self, parent)
@@ -1304,14 +1317,15 @@ class SetRoleAccessPage(tk.Frame):
             side="top",
             fill="x", pady=5)
 
-        self.set_new_role_label = tk.Label(self, text="Встановлення ролей користувачам", font=("Arial Bold", 12), bg='ivory')
+        self.set_new_role_label = tk.Label(self, text="Встановлення ролей користувачам", font=("Arial Bold", 12),
+                                           bg='ivory')
         self.set_new_role_label.place(x=300, y=45)
 
         self.label = tk.Label(self, text="Список ролей", font=("Arial", 10),
-                                           bg='ivory')
+                              bg='ivory')
 
         self.update_role = tk.Button(self, text="Оновити", font=("Arial", 10),
-                                command=self.get_list_of_role)
+                                     command=self.get_list_of_role)
 
         self.roles_label = tk.Label(self, text="", font=("Arial Bold", 10))
 
@@ -1377,10 +1391,236 @@ class SetRoleAccessPage(tk.Frame):
                 query4 = f"UPDATE Users SET AccessModelId = 3 WHERE Id = {user_id};"
                 cursor.execute(query4)
                 db.commit()
-                messagebox.showinfo("Готово", f"Роль(i) успішно надана(i) користувачу - {self.controller.shared_data['username'].get()}")
+                messagebox.showinfo("Готово",
+                                    f"Роль(i) успішно надана(i) користувачу - {self.controller.shared_data['username'].get()}")
             else:
                 messagebox.showinfo("Готово",
                                     f"Роль(i) успішно видалена(i)")
+
+
+class BruteForce(tk.Frame):
+    def __init__(self, parent, controller):
+        tk.Frame.__init__(self, parent)
+        self.controller = controller
+
+        tk.Label(self, text="Підбір паролю для користувачів", font=('Helvetica', 14, "bold")).pack(
+            side="top",
+            fill="x", pady=5)
+
+        self.username_for_password = tk.Label(self, text="Введіть ім'я користувача", font=("Arial", 12), bg='ivory')
+        self.username_for_password.place(x=50, y=50)
+        self.username_for_password_entry = tk.Entry(self, width=30, bd=5)
+        self.username_for_password_entry.place(x=250, y=50)
+
+        self.settings = tk.Label(self, text="Додаткові налаштування", font=("Arial", 12),
+                                 bg='ivory')
+        self.settings.place(x=300, y=100)
+
+        self.password_length = tk.Label(self, text="1. Довжина паролю:", font=("Arial", 10), bg='ivory')
+        self.password_length.place(x=50, y=150)
+
+        self.password_length_entry = tk.Entry(self, width=5, bd=5)
+        self.password_length_entry.place(x=200, y=150)
+
+        self.var_password_length = tk.IntVar()
+        self.check_box = tk.Checkbutton(self, text="Приблизна довжина паролю (+-1 символ)",
+                                        variable=self.var_password_length)
+        self.check_box.place(x=250, y=150)
+
+        self.password_charset = tk.Label(self, text="2. Набір символів:", font=("Arial", 10), bg='ivory')
+        self.password_charset.place(x=50, y=200)
+
+        # Створити список із назвами та змінними для кожної кнопки
+        self.checkboxes = [
+            ("Цифри", tk.IntVar()),
+            ("Літери лат. алфавіту", tk.IntVar()),
+            ("Літери кир. алфавіту", tk.IntVar()),
+            ("Спецсимволи", tk.IntVar())
+        ]
+
+        # Створити кнопки та розмістити їх у вікні за допомогою циклу
+        x_pos = 200
+        for text, var in self.checkboxes:
+            check_box = tk.Checkbutton(self, text=text, variable=var)
+            check_box.place(x=x_pos, y=200)
+            x_pos += 150
+
+        # Додати мітку з інформацією
+        self.label_info = tk.Label(self, text="", font=("Arial", 10))
+        self.label_result = tk.Label(self, text="", font=("Arial", 10))
+
+        button1 = tk.Button(self, text="Знайти пароль", font=("Arial", 10),
+                            command=self.start_thread)
+        button1.place(x=300, y=250)
+
+        button2 = tk.Button(self, text="Зупинити", font=("Arial", 10),
+                            command=self.stop_thread)
+        button2.place(x=450, y=250)
+
+        button3 = tk.Button(self, text="Назад", font=("Arial", 15),
+                            command=lambda: [controller.show_frame(AdminMainPage),
+                                             self.label_info.place(x=2000, y=3000),
+                                             self.label_result.place(x=2000, y=3000)])
+        button3.place(x=722, y=450)
+
+        self.stop_event = threading.Event()
+        self.brute_force_thread = None
+        self.statistics_thread = None
+
+    def stop_thread(self):
+        self.stop_event.set()
+
+    def start_thread(self):
+        if self.brute_force_thread and self.brute_force_thread.is_alive():
+            return
+
+        self.stop_event.clear()
+
+        self.brute_force_thread = threading.Thread(target=self.crack_password, args=(self.stop_event,))
+        self.brute_force_thread.start()
+
+    def crack_password(self, stop_event):
+        count = 0
+        self.charset = ''
+        self.found = False
+        # Символи кириличної абетки
+        cyrillic_letters = 'абвгґдеєжзиіїйклмнопрстуфхцчшщьюя'
+        for i in range(len(self.checkboxes)):
+            if self.checkboxes[i][1].get() == 0:
+                count += 1
+            else:
+                if self.checkboxes[i][0] == "Цифри":
+                    self.charset += string.digits
+                elif self.checkboxes[i][0] == "Літери лат. алфавіту":
+                    self.charset += string.ascii_lowercase + string.ascii_uppercase
+                elif self.checkboxes[i][0] == "Літери кир. алфавіту":
+                    self.charset += cyrillic_letters + cyrillic_letters.upper()
+                elif self.checkboxes[i][0] == "Спецсимволи":
+                    self.charset += string.punctuation
+        if self.username_for_password_entry == '' or count == 4:
+            messagebox.showerror("Помилка!", "Введіть ім'я користувача і виберіть варіанти налаштування!")
+            return
+        else:
+            with sqlite3.connect("Sqlite.sqlite3") as db:
+                cursor = db.cursor()
+                select_query = read_file("Resourсe/SelectAllFromUsers.txt")
+                cursor.execute(select_query)
+
+                for row in cursor:
+                    switch = False
+                    user = Users(*row)
+                    if user.user_name == self.username_for_password_entry.get():
+                        switch = True
+
+                        select_password_query = f"SELECT Password FROM Users WHERE UserName='{user.user_name}';"
+                        cursor.execute(select_password_query)
+
+                        self.password = cursor.fetchone()[0]
+
+                        try:
+                            if self.var_password_length.get() == 1:
+                                try:
+                                    password_len = int(self.password_length_entry.get())
+                                except ValueError:
+                                    messagebox.showerror("Помилка!", "Невірні дані для довжини пароля!")
+                                    self.label_info.config(
+                                        text=f'За даними параметрами пароль не знайдено!', bg="red")
+                                    return
+                                self.label_info.place(x=200, y=300)
+                                self.label_info.config(text="Програма підбирає пароль ....", bg='#F5F5F5')
+                                self.label_info.update()
+                                guess, attempts, time_taken = self.bruteforce_approximately(self.password, self.charset, stop_event,
+                                                                              password_length=password_len)
+                                self.label_result.config(text="", bg='#F5F5F5')
+                                self.label_result.place(x=2000, y=3000)
+                                self.label_info.config(
+                                    text=f"Готово!\nЧас який знадобився для злому пароля '{self.password}': {time_taken:.2f} секунд\nКількість спроб: {attempts}\nПароль: {guess}",
+                                    bg="#8BC34A")
+                            else:
+                                self.bruteforce(self.charset, self.password, stop_event)
+                                self.label_result.place(x=2000, y=3000)
+                                if not self.found:
+                                    self.label_info.config(
+                                        text=f'За даними параметрами пароль не знайдено!', bg="red")
+                        except TypeError:
+                            self.label_result.place(x=2000, y=3000)
+                            self.label_info.config(
+                                text=f'За даними параметрами пароль не знайдено!', bg="red")
+                if not switch:
+                    messagebox.showerror("Помилка!", "Такого користувача не існує!")
+                    return
+
+    def bruteforce(self, charset, password, stop_event):
+        i = False
+        attempts = 0
+        start_time = time.time()
+        try:
+            password_length = int(self.password_length_entry.get())
+            password_end = password_length
+        except ValueError:
+            password_length = 1
+            password_end = 15
+        self.label_info.place(x=200, y=300)
+        self.label_info.config(text="Програма підбирає пароль ....", bg='#F5F5F5')
+        self.label_info.update()
+        for length in range(password_length, password_end + 1):
+            for guess in itertools.product(charset, repeat=length):
+                if stop_event.is_set():
+                    self.label_result.place(x=2000, y=3000)
+                    break
+                guess = "".join(guess)
+                attempts += 1
+                if time.time() - start_time >= 1 and i == 0:
+                    i = True
+                    combinations, days, hours, minutes, seconds, milliseconds = self.show_info(charset, password_end, attempts)
+                    self.label_result.config(
+                        text=f'Швидкість: {attempts} за секунду;\nК-ть комбінацій:{combinations};\nМаксимальний час:{days}д, {hours}г, {minutes}хв, {seconds}с, {milliseconds}мс;', bg='red'
+                        )
+                    self.label_result.place(x=450, y=300)
+                if guess == password:
+                    self.found = True
+                    end_time = time.time()
+                    self.label_info.config(
+                        text=f"Готово!\nЧас який знадобився для злому пароля '{password}': {end_time - start_time:.2f} секунд\nКількість спроб: {attempts}\nПароль: {guess}",
+                        bg="#8BC34A")
+                    self.stop_event.set()
+                    return
+
+    def bruteforce_approximately(self, password, charset, stop_event, password_length=None):
+        attempts = 0
+        i = False
+        start_time = time.time()
+        if password_length == None or password_length == '':
+            password_length = 5
+        for length in range(password_length - 1, password_length + 2):
+            for guess in itertools.product(charset, repeat=length):
+                if stop_event.is_set():
+                    break
+                guess = "".join(guess)
+                attempts += 1
+                if time.time() - start_time >= 1 and i == 0:
+                    i = True
+                    combinations, days, hours, minutes, seconds, milliseconds = self.show_info(charset, password_length, attempts)
+                    self.label_result.config(
+                        text=f'Швидкість: {attempts} за секунду;\nК-ть комбінацій:{combinations};\nМаксимальний час:{days}д, {hours}г, {minutes}хв, {seconds}с, {milliseconds}мс;', bg='red')
+                    self.label_result.place(x=450, y=300)
+                if guess == password:
+                    end_time = time.time()
+                    self.stop_event.set()
+                    return (''.join(guess), attempts, end_time - start_time)
+
+    def show_info(self, charset, password_length, attempts):
+        combinations = len(charset) ** password_length
+        total_seconds = combinations / attempts
+        days = int(total_seconds // (24 * 3600))
+        total_seconds = total_seconds % (24 * 3600)
+        hours = int(total_seconds // 3600)
+        total_seconds %= 3600
+        minutes = int(total_seconds // 60)
+        seconds = int(total_seconds % 60)
+        milliseconds = int((total_seconds - int(total_seconds)) * 1000)
+        return (combinations, days, hours, minutes, seconds, milliseconds)
+
 
 # головний клас додатку
 class Application(tk.Tk):
@@ -1401,7 +1641,7 @@ class Application(tk.Tk):
         # загрузка фреймів
         self.frames = {}
         for F in (LoginPage, MainPage, AdminMainPage, CreateUsersPage, EditPasswordPage, EditAccessPage, EditMenuPage,
-                  AddNewFilePage, RoleAccessPage, SetRoleAccessPage):
+                  AddNewFilePage, RoleAccessPage, SetRoleAccessPage, BruteForce):
             frame = F(window, self)
             self.frames[F] = frame
             frame.grid(row=0, column=0, sticky="nsew")
@@ -1460,6 +1700,3 @@ def main():
 # точка входу в програму
 if __name__ == '__main__':
     main()
-
-#Admin
-#123qwerT
