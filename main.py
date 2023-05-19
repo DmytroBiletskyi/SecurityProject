@@ -10,11 +10,17 @@ import subprocess
 import datetime
 import time
 import threading
+import bcrypt
+import cv2
+import numpy as np
+import tensorflow as tf
+
 
 
 # клас для роботи з табличкою Users
 class Users(object):
     def __init__(self, id, user_name, password, is_admin, password_type_id, user_access_level_id, mod, access_model_id,
+                 old_password1, old_password2, old_password3, password_active_days, password_expiration_date, isBlock,
                  created):
         self.id = id
         self.user_name = user_name
@@ -25,6 +31,12 @@ class Users(object):
         self.mod = mod
         self.access_model_id = access_model_id
         self.created = created
+        self.old_password1 = old_password1
+        self.old_password2 = old_password2
+        self.old_password3 = old_password3
+        self.password_active_days = password_active_days
+        self.password_expiration_date = password_expiration_date
+        self.isBlock = isBlock
 
     def get_access_model_name(self):
         with sqlite3.connect("Sqlite.sqlite3") as db:
@@ -63,6 +75,7 @@ class LoginPage(tk.Frame):
     def __init__(self, parent, controller):
         tk.Frame.__init__(self, parent)
         self.controller = controller
+        self.failed_attempts = 0  # кількість невдалих спроб введення паролю
 
         border = tk.LabelFrame(self, text='Вхід', bg='ivory', bd=10, font=("Arial", 20))
         border.pack(fill="both", expand="yes", padx=150, pady=150)
@@ -75,9 +88,15 @@ class LoginPage(tk.Frame):
         self.password_entry = tk.Entry(border, width=30, show='*', bd=5)
         self.password_entry.place(x=180, y=80)
 
+        self.password_entry.bind("<<Paste>>", self.disable_paste)
+
         b1 = tk.Button(border, text="Підтвердити", font=("Arial", 12), command=self.verify)
         b1.place(x=372, y=120)
 
+    def disable_paste(self, event):
+        messagebox.showerror("Помилка!",
+                             "Неможливо вставляти значення у поле з паролем!")
+        self.after(1, lambda: self.password_entry.delete(0, tk.END))
     # очищення вікна
     def clear_entries(self):
         self.username_entry.delete(0, tk.END)
@@ -87,20 +106,172 @@ class LoginPage(tk.Frame):
     def verify(self):
         with sqlite3.connect("Sqlite.sqlite3") as db:
             cursor = db.cursor()
+            if_block = f"SELECT IsBlock FROM Users WHERE UserName = '{self.username_entry.get()}';"
+            cursor.execute(if_block)
+            for row in cursor:
+                if row[0]:
+                    messagebox.showerror("Користувача заблоковано!",
+                                         "Для розблокування зверніться до адміністратора!")
+                    return
             select_query = read_file("Resourсe/SelectAllFromUsers.txt")
             cursor.execute(select_query)
 
             for row in cursor:
                 user = Users(*row)
-                if user.user_name == self.username_entry.get() and user.password == self.password_entry.get():
-                    self.controller.shared_data["username"].set(user.user_name)
-                    self.controller.show_frame(AdminMainPage if user.is_admin else MainPage)
-                    self.clear_entries()
-                    return
+                if user.user_name == self.username_entry.get() and self.verify_password(self.password_entry.get(),
+                                                                                        user.password):
+                    # Введено правильний пароль
+                    self.failed_attempts = 0  # Скидуємо кількість невдалих спроб
+                    select_query2 = f"SELECT PasswordExpirationDate FROM Users WHERE UserName = '{user.user_name}'"
+                    cursor.execute(select_query2)
+                    for row in cursor:
+                        date_string = row[0]
+                    try:
+                        date = datetime.datetime.strptime(date_string, "%Y-%m-%d %H:%M:%S")
+                        current_date = datetime.datetime.now()
+                        if date < current_date:
+                            messagebox.showerror("Доступ заборонено!",
+                                                 "Термін дії паролю закінчився. Будь ласка зверніться до адміністратора!")
+                            return
+                        else:
+                            self.controller.shared_data["username"].set(user.user_name)
+                            if user.is_admin:
+                                self.controller.show_frame(AdminMainPage)
+                                self.clear_entries()
+                            else:
+                                self.controller.user_is_login = True
+                                self.controller.show_frame(HumanDetectorPage)
+                                self.clear_entries()
+                            return
+                    except TypeError:
+                        messagebox.showerror("Помилка!",
+                                             "У пароля немає терміну дії!")
+                        return
 
-            messagebox.showerror("Помилка", "Будь ласка перевірте правильність логіну і паролю!!")
-            self.clear_entries()
+            # Невдалий ввід паролю
+            self.failed_attempts += 1  # Збільшуємо кількість невдалих спроб
+            if self.failed_attempts >= 3:
+                messagebox.showerror("Помилка",
+                                     "Перевищено максимальну кількість невдалих спроб. Блокування користувача!")
+                # код для блокування користувача
+                block_user = f"UPDATE Users SET IsBlock = 1 WHERE UserName = '{self.username_entry.get()}';"
+                cursor.execute(block_user)
+                db.commit()
+                return
+            else:
+                time.sleep(2)  # Затримка на 2 секунди
+                messagebox.showerror("Помилка", "Невірний пароль. Спробуйте знову.")
+                self.clear_entries()
 
+    def verify_password(self, password, hashed_password):
+        # Перевірка, чи пароль збігається з хешованим паролем
+        return bcrypt.checkpw(password.encode('utf-8'), hashed_password.encode('utf-8'))
+
+
+class HumanDetectorPage(tk.Frame):
+    def __init__(self, parent, controller):
+        tk.Frame.__init__(self, parent)
+        self.controller = controller
+        tk.Label(self, text="Перевірка наявності обличчя людини", font=('Helvetica', 18, "bold")).pack(side="top",
+                                                                                                      fill="x", pady=5)
+        self.label = tk.Label(self)
+        self.label.pack()
+
+        self.cap = None  # Camera capture object
+        self.model = None
+        self.last_human_detection = 0
+        self.countdown = 0
+        self.is_counting_down = False
+
+        self.button1 = tk.Button(self, text="Перевірити на наявність людини", font=("Arial", 12), bg="green",
+                            command=self.start_camera)
+
+        self.button1.place(x=300, y=50)
+
+        button = tk.Button(self, text="Вихід", font=("Arial", 15), command=lambda: [self.stop_camera(), self.controller.show_frame(LoginPage)])
+        button.place(x=722, y=450)
+
+    def start_camera(self):
+        try:
+            self.label = tk.Label(self)
+            self.label.pack()
+        except Exception:
+            pass
+        self.button1.place_forget()
+        self.cap = cv2.VideoCapture(0)
+        self.model = tf.saved_model.load('ssd_mobilenet_v2_320x320_coco17_tpu-8/saved_model')
+        self.last_human_detection = time.time()
+        self.countdown = 0
+        self.is_counting_down = False
+
+        self.update_frame()
+
+    def stop_camera(self):
+        if self.cap is not None:
+            self.cap.release()
+            self.button1.place(x=300, y=50)
+            try:
+                self.label.destroy()
+            except Exception:
+                pass
+
+
+    def update_frame(self):
+        ret, frame = self.cap.read()
+        if not ret:
+            return
+
+        human_detected, detection_frame = self.detect_human(frame)
+        current_time = time.time()
+
+        if human_detected:
+            if not self.is_counting_down:
+                self.is_counting_down = True
+                self.last_human_detection = current_time
+                self.countdown = 0
+            else:
+                time_since_last_detection = current_time - self.last_human_detection
+                if time_since_last_detection >= 5 and self.controller.user_is_login:
+                    self.is_counting_down = False
+                    self.stop_camera()
+                    self.controller.show_frame(MainPage)
+                else:
+                    self.countdown = int(time_since_last_detection)
+        else:
+            self.is_counting_down = False
+            self.countdown = 5
+
+        if self.is_counting_down:
+            cv2.putText(detection_frame, str(self.countdown), (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+
+        img = Image.fromarray(cv2.cvtColor(detection_frame, cv2.COLOR_BGR2RGB))
+        imgtk = ImageTk.PhotoImage(image=img)
+        try:
+            self.label.imgtk = imgtk
+            self.label.configure(image=imgtk)
+            self.label.after(5, self.update_frame)
+        except Exception:
+            pass
+
+    def detect_human(self, frame):
+        input_tensor = tf.convert_to_tensor(frame)
+        input_tensor = input_tensor[tf.newaxis, ...]
+
+        output_dict = self.model(input_tensor)
+        detection_scores = output_dict['detection_scores'][0].numpy()
+        detection_classes = output_dict['detection_classes'][0].numpy()
+        detection_boxes = output_dict['detection_boxes'][0].numpy()
+
+        human_detected = False
+        for score, cls, bbox in zip(detection_scores, detection_classes, detection_boxes):
+            if score > 0.5 and cls == 1.0:
+                human_detected = True
+                bbox = bbox * np.array([frame.shape[0], frame.shape[1], frame.shape[0], frame.shape[1]])
+                bbox = bbox.astype(np.int32)
+                cv2.rectangle(frame, (bbox[1], bbox[0]), (bbox[3], bbox[2]), (0, 255, 0), 2)
+                break
+
+        return human_detected, frame
 
 # сторінка користувача
 class MainPage(tk.Frame):
@@ -153,6 +324,7 @@ class MainPage(tk.Frame):
         self.save_txt_button.place_forget()
         self.save_img_button.place_forget()
         self.rotate_button.place_forget()
+        self.controller.user_is_login = False
         try:
             self.timer.pack_forget()
         except Exception:
@@ -589,13 +761,96 @@ class EditMenuPage(tk.Frame):
                             command=lambda: controller.show_frame(EditPasswordPage))
         button1.place(x=100, y=60)
 
-        button2 = tk.Button(self, text="2. Змінити модель доступу користувача", font=("Arial", 12),
-                            command=lambda: controller.show_frame(EditAccessPage))
+        button2 = tk.Button(self, text="2. Змінити термін дії паролю для користувача", font=("Arial", 12),
+                            command=lambda: controller.show_frame(EditPasswordActiveDaysPage))
         button2.place(x=100, y=110)
 
-        button3 = tk.Button(self, text="Назад", font=("Arial", 15),
+        button3 = tk.Button(self, text="3. Змінити модель доступу користувача", font=("Arial", 12),
+                            command=lambda: controller.show_frame(EditAccessPage))
+        button3.place(x=100, y=160)
+
+        button4 = tk.Button(self, text="4. Розблокувати користувача", font=("Arial", 12),
+                            command=lambda: controller.show_frame(UnblockUserPage))
+        button4.place(x=100, y=210)
+
+        button5 = tk.Button(self, text="Назад", font=("Arial", 15),
                             command=lambda: controller.show_frame(AdminMainPage))
-        button3.place(x=722, y=450)
+        button5.place(x=722, y=450)
+
+
+class UnblockUserPage(tk.Frame):
+    def __init__(self, parent, controller):
+        tk.Frame.__init__(self, parent)
+        self.controller = controller
+
+        tk.Label(self, text="Розблокування користувачів", font=('Helvetica', 14, "bold")).pack(side="top", fill="x", pady=5)
+
+        l1 = tk.Label(self, text="Введіть ім'я користувача:", font=("Arial Bold", 12), bg='ivory')
+        l1.place(x=50, y=50)
+
+        self.username = tk.Entry(self, width=30, bd=5)
+        self.username.place(x=270, y=50)
+
+        button1 = tk.Button(self, text="Підтвердити", font=("Arial", 15),
+                            command=self.unblock_user)
+        button1.place(x=300, y=180)
+
+        button2 = tk.Button(self, text="Назад", font=("Arial", 15),
+                            command=lambda: controller.show_frame(EditMenuPage))
+        button2.place(x=722, y=450)
+
+    def unblock_user(self):
+        try:
+            with sqlite3.connect("Sqlite.sqlite3") as db:
+                cursor = db.cursor()
+                unblock_query = f"UPDATE Users SET IsBlock = 0 WHERE UserName = '{self.username.get()}';"
+                cursor.execute(unblock_query)
+                db.commit()
+                messagebox.showinfo("Готово!", f"Користувача - {self.username.get()} розблоковано!")
+        except Exception:
+            messagebox.showerror("Помилка!", "Невірні дані!")
+
+
+
+class EditPasswordActiveDaysPage(tk.Frame):
+    def __init__(self, parent, controller):
+        tk.Frame.__init__(self, parent)
+        self.controller = controller
+
+        tk.Label(self, text="Встановлення терміну дії пароля для користувачів", font=('Helvetica', 14, "bold")).pack(side="top", fill="x", pady=5)
+
+        l1 = tk.Label(self, text="Введіть ім'я користувача:", font=("Arial Bold", 12), bg='ivory')
+        l1.place(x=50, y=50)
+
+        self.username = tk.Entry(self, width=30, bd=5)
+        self.username.place(x=270, y=50)
+
+        l2 = tk.Label(self, text="Введіть кількість днів:", font=("Arial Bold", 12), bg='ivory')
+        l2.place(x=50, y=100)
+        self.password_active_days_entry = tk.Entry(self, width=30, bd=5)
+        self.password_active_days_entry.place(x=270, y=100)
+
+        button1 = tk.Button(self, text="Підтвердити", font=("Arial", 15),
+                            command=self.set_password_active_days)
+        button1.place(x=300, y=180)
+
+        button2 = tk.Button(self, text="Назад", font=("Arial", 15),
+                            command=lambda: controller.show_frame(EditMenuPage))
+        button2.place(x=722, y=450)
+
+    def set_password_active_days(self):
+        try:
+            with sqlite3.connect("Sqlite.sqlite3") as db:
+                cursor = db.cursor()
+                today = datetime.datetime.today()  # поточна дата та час
+                future_date = today + datetime.timedelta(days=int(self.password_active_days_entry.get()))
+                formatted_date = future_date.strftime("%Y-%m-%d %H:%M:%S")
+                update_password_days = f"UPDATE Users SET PasswordActiveDays = {self.password_active_days_entry.get()}, PasswordExpirationDate = '{formatted_date}' WHERE UserName = '{self.username.get()}';"
+                cursor.execute(update_password_days)
+                db.commit()
+                messagebox.showinfo("Готово!", f"Встановлено термін в {self.password_active_days_entry.get()} днів")
+        except Exception:
+            messagebox.showerror("Помилка!", "Не вірний формат!")
 
 
 # сторінка для створення коритувачів
@@ -638,6 +893,7 @@ class CreateUsersPage(tk.Frame):
     # метод який створює користувача
     def create_user(self):
         self.result_label.place(x=475, y=75)
+        hashed_password = self.hash_password(self.user_password_entry.get())
         with sqlite3.connect("Sqlite.sqlite3") as db:
 
             cursor = db.cursor()
@@ -661,7 +917,7 @@ class CreateUsersPage(tk.Frame):
                     self.user_password_entry.delete(0, tk.END)
 
                 else:
-                    select_txt2 = f"INSERT INTO users(UserName, Password, PasswordTypeId, UserAccessLevelId, Mod) VALUES('{self.user_name_entry.get()}', '{self.user_password_entry.get()}', {self.password_option.get()}, 2, 'r')"
+                    select_txt2 = f"INSERT INTO users(UserName, Password, PasswordTypeId, UserAccessLevelId, Mod, AccessModelId) VALUES('{self.user_name_entry.get()}', '{hashed_password}', {self.password_option.get()}, 2, 'r', 1)"
                     cursor.execute(select_txt2)
                     db.commit()
                     self.result_label.config(text=f"Користувача {self.user_name_entry.get()} успішно створено!",
@@ -669,11 +925,22 @@ class CreateUsersPage(tk.Frame):
                     self.clear_entries()
 
             if self.password_option.get() == 1 and self.user_name_entry.get() != '' and self.user_password_entry.get() != '':
-                select_txt3 = f"INSERT INTO users(UserName, Password, PasswordTypeId, UserAccessLevelId, Mod) VALUES('{self.user_name_entry.get()}', '{self.user_password_entry.get()}', {self.password_option.get()}, 2, 'r')"
+                select_txt3 = f"INSERT INTO users(UserName, Password, PasswordTypeId, UserAccessLevelId, Mod, AccessModelId) VALUES('{self.user_name_entry.get()}', '{hashed_password}', {self.password_option.get()}, 2, 'r', 1)"
                 cursor.execute(select_txt3)
                 db.commit()
                 self.result_label.config(text=f"Користувача {self.user_name_entry.get()} успішно створено!", fg="green")
                 self.clear_entries()
+
+    def hash_password(self, password):
+        # Генерація солі
+        salt = bcrypt.gensalt()
+
+        # Хешування пароля з використанням солі
+        hashed_password = bcrypt.hashpw(password.encode('utf-8'), salt)
+
+        # Повернення хешованого пароля як рядок
+        return hashed_password.decode('utf-8')
+
 
     # очищення вікна
     def clear_entries(self):
@@ -731,13 +998,24 @@ class EditPasswordPage(tk.Frame):
             user_name_entry = self.t1.get()
             new_user_password = self.t2.get()
 
+            hashed_password = self.hash_password(new_user_password)
+
+            select_all_old_password = f"SELECT Password, OldPassword1, OldPassword2, OldPassword3 FROM Users WHERE UserName = '{user_name_entry}'"
+            cursor.execute(select_all_old_password)
+
+            for row in cursor:
+                for i in row:
+                    if self.verify_password(new_user_password, i):
+                        messagebox.showerror("Помилка!", "Це старий пароль. Введіть інший!")
+                        return
+
             select_txt = "SELECT UserName FROM users"
             cursor.execute(select_txt)
             i = 1
             for name in cursor:
                 if name[0] == user_name_entry:
                     i = 0
-                    query1 = f'UPDATE Users SET Password = "{new_user_password}", PasswordTypeId = {self.password_option.get()} WHERE UserName = "{user_name_entry}";'
+                    query1 = f'UPDATE Users SET OldPassword3 = OldPassword2, OldPassword2 = OldPassword1, OldPassword1 = Password, Password = "{hashed_password}", PasswordTypeId = {self.password_option.get()}, PasswordActiveDays = 30 WHERE UserName = "{user_name_entry}";'
                     if self.password_option.get() == 1:
                         cursor.execute(query1)
                         db.commit()
@@ -765,6 +1043,21 @@ class EditPasswordPage(tk.Frame):
                 messagebox.showerror('Помилка', 'Такого користувача не існує!')
                 self.t1.delete(0, tk.END)
                 self.t2.delete(0, tk.END)
+
+    def hash_password(self, password):
+        # Генерація солі
+        salt = bcrypt.gensalt()
+        # Хешування пароля з використанням солі
+        hashed_password = bcrypt.hashpw(password.encode('utf-8'), salt)
+        # Повернення хешованого пароля як рядок
+        return hashed_password.decode('utf-8')
+
+    def verify_password(self, password, hashed_password):
+        # Перевірка, чи пароль збігається з хешованим паролем
+        try:
+            return bcrypt.checkpw(password.encode('utf-8'), hashed_password.encode('utf-8'))
+        except AttributeError:
+            pass
 
 
 class EditAccessPage(tk.Frame):
@@ -1081,9 +1374,12 @@ class EditAccessPage(tk.Frame):
         self.l6.place_forget()
         self.l7.place_forget()
         self.button3.place_forget()
-        self.button6.place_forget()
-        self.create_role_btn.place_forget()
-        self.set_role_btn.place_forget()
+        try:
+            self.button6.place_forget()
+            self.create_role_btn.place_forget()
+            self.set_role_btn.place_forget()
+        except AttributeError:
+            pass
         try:
             for i in range(1, len(self.file_mods) + 1):
                 self.nametowidget(f"l8{i}").place_forget()
@@ -1529,8 +1825,9 @@ class BruteForce(tk.Frame):
                                 self.label_info.place(x=200, y=300)
                                 self.label_info.config(text="Програма підбирає пароль ....", bg='#F5F5F5')
                                 self.label_info.update()
-                                guess, attempts, time_taken = self.bruteforce_approximately(self.password, self.charset, stop_event,
-                                                                              password_length=password_len)
+                                guess, attempts, time_taken = self.bruteforce_approximately(self.password, self.charset,
+                                                                                            stop_event,
+                                                                                            password_length=password_len)
                                 self.label_result.config(text="", bg='#F5F5F5')
                                 self.label_result.place(x=2000, y=3000)
                                 self.label_info.config(
@@ -1572,10 +1869,12 @@ class BruteForce(tk.Frame):
                 attempts += 1
                 if time.time() - start_time >= 1 and i == 0:
                     i = True
-                    combinations, days, hours, minutes, seconds, milliseconds = self.show_info(charset, password_end, attempts)
+                    combinations, days, hours, minutes, seconds, milliseconds = self.show_info(charset, password_end,
+                                                                                               attempts)
                     self.label_result.config(
-                        text=f'Швидкість: {attempts} за секунду;\nК-ть комбінацій:{combinations};\nМаксимальний час:{days}д, {hours}г, {minutes}хв, {seconds}с, {milliseconds}мс;', bg='red'
-                        )
+                        text=f'Швидкість: {attempts} за секунду;\nК-ть комбінацій:{combinations};\nМаксимальний час:{days}д, {hours}г, {minutes}хв, {seconds}с, {milliseconds}мс;',
+                        bg='red'
+                    )
                     self.label_result.place(x=450, y=300)
                 if guess == password:
                     self.found = True
@@ -1600,9 +1899,11 @@ class BruteForce(tk.Frame):
                 attempts += 1
                 if time.time() - start_time >= 1 and i == 0:
                     i = True
-                    combinations, days, hours, minutes, seconds, milliseconds = self.show_info(charset, password_length, attempts)
+                    combinations, days, hours, minutes, seconds, milliseconds = self.show_info(charset, password_length,
+                                                                                               attempts)
                     self.label_result.config(
-                        text=f'Швидкість: {attempts} за секунду;\nК-ть комбінацій:{combinations};\nМаксимальний час:{days}д, {hours}г, {minutes}хв, {seconds}с, {milliseconds}мс;', bg='red')
+                        text=f'Швидкість: {attempts} за секунду;\nК-ть комбінацій:{combinations};\nМаксимальний час:{days}д, {hours}г, {minutes}хв, {seconds}с, {milliseconds}мс;',
+                        bg='red')
                     self.label_result.place(x=450, y=300)
                 if guess == password:
                     end_time = time.time()
@@ -1632,6 +1933,8 @@ class Application(tk.Tk):
             "username": tk.StringVar(),
         }
 
+        self.user_is_login = False
+
         # створення вікна
         window = tk.Frame(self)
         window.pack()
@@ -1641,7 +1944,7 @@ class Application(tk.Tk):
         # загрузка фреймів
         self.frames = {}
         for F in (LoginPage, MainPage, AdminMainPage, CreateUsersPage, EditPasswordPage, EditAccessPage, EditMenuPage,
-                  AddNewFilePage, RoleAccessPage, SetRoleAccessPage, BruteForce):
+                  AddNewFilePage, RoleAccessPage, SetRoleAccessPage, BruteForce, EditPasswordActiveDaysPage, UnblockUserPage, HumanDetectorPage):
             frame = F(window, self)
             self.frames[F] = frame
             frame.grid(row=0, column=0, sticky="nsew")

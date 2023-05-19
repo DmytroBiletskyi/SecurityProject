@@ -101,10 +101,16 @@ CREATE TABLE IF NOT EXISTS [Users] (
 , [UserName] TEXT NOT NULL
 , [Password] TEXT NULL
 , [IsAdmin] BOOLEAN NOT NULL default 0
+, [IsBlock] BOOLEAN NOT NULL DEFAULT 0,
 , [PasswordTypeId] INTEGER NOT NULL
 , [UserAccessLevelId] INTEGER NOT NULL
 , [Mod] TEXT NOT NULL
 , [AccessModelId] INTEGER NOT NULL
+, [OldPassword1] TEXT
+, [OldPassword2] TEXT
+, [OldPassword3] TEXT
+, [PasswordExpirationDate] DATETIME,
+, [PasswordActiveDays] INTEGER,
 , [Created] DATETIME default current_timestamp
 , FOREIGN KEY ([PasswordTypeId]) REFERENCES PaswordTypes(Id)
 , FOREIGN KEY ([UserAccessLevelId]) REFERENCES AccessLevels(Id)
@@ -112,3 +118,15 @@ CREATE TABLE IF NOT EXISTS [Users] (
 );
 INSERT OR IGNORE INTO Users ([UserName], [Password], [PasswordTypeId], [UserAccessLevelId], [Mod], [AccessModelId], [IsAdmin]) VALUES
 ('Admin', '123qwerT', 2, 5, 'r, w, e', 1, 1), ('Biletskyi_1', '1111', 1, 4, 'r, w', 2, 0), ('Biletskyi_2', '222222tttt', 1, 5, 'r, w', 2, 0), ('Biletskyi_3', '123zxcZXC', 2, 2, 'e', 2, 0), ('Biletskyi_4', 'rty456Gh1', 2, 4, 'r', 2, 0), ('Biletskyi_5', '1aE2wE3FR4', 2, 5, 'r, w, e', 2, 0);
+
+CREATE TRIGGER update_password_expiration
+BEFORE UPDATE ON Users
+FOR EACH ROW
+/*якщо пароль змінився*/
+WHEN NEW.password <> OLD.password
+BEGIN
+ UPDATE Users
+ /*обчислюємо нову дату закінчення дії*/
+ SET PasswordExpirationDate = datetime('now', '+' || NEW.PasswordActiveDays || ' days')
+ WHERE Id = NEW.id;
+END;
